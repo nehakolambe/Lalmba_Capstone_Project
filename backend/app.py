@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from .config import Config
+from .db_schema import ensure_schema
 from .extensions import db
 from .routes import auth_bp, chat_bp, progress_bp
 
@@ -48,6 +49,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
     with app.app_context():
         db.create_all()
+        ensure_schema()
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)

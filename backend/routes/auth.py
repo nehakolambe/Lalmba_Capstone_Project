@@ -5,18 +5,18 @@ from typing import Tuple
 from flask import jsonify, request, session
 
 from ..extensions import db
-from ..models import User, UserProfile
+from ..models import User
 from ..utils import get_current_user, login_required
 from . import auth_bp
 
 
 def _validate_credentials(data) -> Tuple[str, str]:
     username = (data.get("username") or "").strip()
-    password = (data.get("password") or "").strip()
+    pin = (data.get("pin") or "").strip()
 
-    if not username or not password:
-        raise ValueError("Username and password are required")
-    return username, password
+    if not username or not pin:
+        raise ValueError("Username and PIN are required")
+    return username, pin
 
 
 @auth_bp.route("/auth/login", methods=["OPTIONS"])
@@ -31,13 +31,13 @@ def login():
     payload = request.get_json(silent=True) or {}
 
     try:
-        username, password = _validate_credentials(payload)
+        username, pin = _validate_credentials(payload)
     except ValueError as exc:
         return jsonify({"message": str(exc)}), 401
 
     user = User.query.filter_by(username=username).one_or_none()
-    if not user or not user.check_password(password):
-        return jsonify({"message": "Invalid username or password."}), 401
+    if not user or not user.check_pin(pin):
+        return jsonify({"message": "Invalid username or PIN."}), 401
 
     db.session.add(user)  # ensure attached in case of expired session
     session["user_id"] = user.id
@@ -56,13 +56,19 @@ def logout(user):
     return jsonify({"ok": True})
 
 
-@auth_bp.get("/auth/session")
-def current_session():
+@auth_bp.get("/auth/me")
+def current_user():
     """Return the currently authenticated user, if any."""
     user = get_current_user()
     if not user:
         return jsonify({"user": None}), 200
     return jsonify({"user": user.to_dict()})
+
+
+@auth_bp.get("/auth/session")
+def current_session():
+    """Backward-compatible alias for /auth/me."""
+    return current_user()
 
 
 @auth_bp.route("/auth/register", methods=["OPTIONS"])
@@ -78,18 +84,18 @@ def register():
 
     errors: dict[str, str] = {}
     username = (payload.get("username") or "").strip()
-    password = (payload.get("password") or "").strip()
-    full_name = (payload.get("name") or payload.get("full_name") or "").strip()
-    details = (payload.get("details") or payload.get("additional_details") or "").strip()
+    pin = (payload.get("pin") or "").strip()
+    full_name = (payload.get("fullName") or payload.get("full_name") or "").strip()
+    details = (payload.get("details") or "").strip()
 
     if not username:
         errors["username"] = "Username is required."
-    if not password:
-        errors["password"] = "Password/PIN is required."
-    elif len(password) < 4:
-        errors["password"] = "Password must be at least 4 characters."
+    if not pin:
+        errors["pin"] = "PIN is required."
+    elif len(pin) < 4:
+        errors["pin"] = "PIN must be at least 4 characters."
     if not full_name:
-        errors["name"] = "Name is required."
+        errors["fullName"] = "Full name is required."
 
     if errors:
         return jsonify({"message": "Invalid registration data", "details": errors}), 400
@@ -106,13 +112,10 @@ def register():
             409,
         )
 
-    user = User(username=username)
-    user.set_password(password)
+    user = User(username=username, full_name=full_name, details=details or None)
+    user.set_pin(pin)
     db.session.add(user)
     db.session.flush()
-
-    profile = UserProfile(user_id=user.id, full_name=full_name, details=details or None)
-    db.session.add(profile)
 
     session["user_id"] = user.id
     session.permanent = bool(payload.get("remember"))

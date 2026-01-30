@@ -1,0 +1,23 @@
+{
+  "name": "matoso-chatbot-server",
+  "version": "0.1.0",
+  "description": "Starter Express backend for Matoso Chatbot",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "lint": "eslint \"src/**/*.js\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-validator": "^7.0.1",
+    "openai": "^4.52.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.10.0",
+    "nodemon": "^3.1.4"
+  }
+}
