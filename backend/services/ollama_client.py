@@ -9,7 +9,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/").rstrip("/")
 OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_HEALTH_URL = f"{OLLAMA_BASE_URL}/api/tags"
 DEFAULT_MODEL = os.getenv("OLLAMA_DEFAULT_MODEL", "llama2")
