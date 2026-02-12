@@ -1,10 +1,15 @@
-// Keep this in sync with the Flask server host/port to avoid "Failed to fetch" errors.
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+// CRA proxy (package.json) forwards API calls to the Flask backend.
+const API_BASE = '';
+
+function buildUrl(path) {
+  if (!path) return '/';
+  return path.startsWith('/') ? path : `/${path}`;
+}
 
 async function request(path, { method = 'GET', body, headers = {} } = {}) {
   let response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(`${API_BASE}${buildUrl(path)}`, {
       method,
       credentials: 'include',
       headers: {
@@ -15,7 +20,7 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
     });
   } catch (networkError) {
     // TIP: "Cannot connect to server" usually means the Flask API isn't running
-    // on API_BASE or the origin is missing from Config.CORS_ORIGINS.
+    // or the CRA proxy target is unavailable.
     const error = new Error('Cannot connect to server');
     error.cause = networkError;
     error.network = true;
@@ -82,7 +87,10 @@ export async function sendMessage(text) {
     method: 'POST',
     body: { text }
   });
-  return data.messages || [];
+  return {
+    messages: data.messages || [],
+    sources: data.sources || []
+  };
 }
 
 export async function resetChat() {
@@ -91,7 +99,10 @@ export async function resetChat() {
 
 export async function fetchProgress() {
   const data = await request('/progress');
-  return data.progress || [];
+  const items = data.progress || [];
+  const current = Number.isFinite(data.current) ? data.current : items.length;
+  const max = Number.isFinite(data.max) ? data.max : 10;
+  return { items, current, max };
 }
 
 export async function recordProgress(milestone, notes = '') {
@@ -100,4 +111,24 @@ export async function recordProgress(milestone, notes = '') {
     body: { milestone, notes }
   });
   return data.progress;
+}
+
+export async function incrementProgress() {
+  const data = await request('/progress/increment', { method: 'POST' });
+  const current = Number.isFinite(data.current) ? data.current : 0;
+  const max = Number.isFinite(data.max) ? data.max : 10;
+  return { current, max, capped: Boolean(data.capped) };
+}
+
+export async function fetchQuestionnaire() {
+  const data = await request('/questionnaire/me');
+  return data.questionnaire || null;
+}
+
+export async function saveQuestionnaire(answers) {
+  const data = await request('/questionnaire/me', {
+    method: 'POST',
+    body: { answers }
+  });
+  return data.questionnaire || null;
 }

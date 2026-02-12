@@ -114,6 +114,9 @@ def register():
 
     user = User(username=username, full_name=full_name, details=details or None)
     user.set_pin(pin)
+    # Legacy schemas still enforce NOT NULL on password_hash.
+    if "password_hash" in user.__table__.columns and not user.password_hash:
+        user.password_hash = user.pin_hash
     db.session.add(user)
     db.session.flush()
 

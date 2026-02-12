@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 
 import bcrypt
 
@@ -13,6 +14,8 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     full_name = db.Column(db.String(255), nullable=False)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    # Backwards-compatible column for earlier password-based auth.
+    password_hash = db.Column(db.String(255), nullable=False)
     pin_hash = db.Column(db.String(255), nullable=False)
     details = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -23,17 +26,25 @@ class User(db.Model):
     progress_updates = db.relationship(
         "Progress", back_populates="user", cascade="all, delete-orphan"
     )
+    questionnaire_responses = db.relationship(
+        "QuestionnaireResponse", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def set_pin(self, raw_pin: str) -> None:
         """Hash and store the provided PIN."""
         hashed = bcrypt.hashpw(raw_pin.encode("utf-8"), bcrypt.gensalt())
-        self.pin_hash = hashed.decode("utf-8")
+        hashed_value = hashed.decode("utf-8")
+        self.pin_hash = hashed_value
+        # Keep legacy column populated to satisfy older schemas.
+        self.password_hash = hashed_value
 
     def check_pin(self, raw_pin: str) -> bool:
         """Validate a raw PIN against the stored hash."""
-        if not self.pin_hash:
-            return False
-        return bcrypt.checkpw(raw_pin.encode("utf-8"), self.pin_hash.encode("utf-8"))
+        if self.pin_hash:
+            return bcrypt.checkpw(raw_pin.encode("utf-8"), self.pin_hash.encode("utf-8"))
+        if self.password_hash:
+            return bcrypt.checkpw(raw_pin.encode("utf-8"), self.password_hash.encode("utf-8"))
+        return False
 
     def to_dict(self) -> dict:
         return {
@@ -95,3 +106,81 @@ class Progress(db.Model):
             "notes": self.notes,
             "created_at": self.created_at.isoformat(),
         }
+
+
+class QuestionnaireResponse(db.Model):
+    """Stored onboarding questionnaire responses per user."""
+
+    __tablename__ = "questionnaire_responses"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    answers_json = db.Column(db.Text, nullable=False)
+    recommendation_text = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.Index("ix_questionnaire_user_id", "user_id"),
+        db.Index("ix_questionnaire_created_at", "created_at"),
+    )
+
+    user = db.relationship("User", back_populates="questionnaire_responses")
+
+    def to_dict(self) -> dict:
+        try:
+            answers = json.loads(self.answers_json) if self.answers_json else {}
+        except json.JSONDecodeError:
+            answers = {}
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "answers": answers,
+            "recommendation_text": self.recommendation_text,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+class AppDoc(db.Model):
+    """Structured application metadata sourced from the Endless OS app list."""
+
+    __tablename__ = "app_docs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    app_name = db.Column(db.Text, nullable=False)
+    category = db.Column(db.Text, nullable=True)
+    requires_internet = db.Column(db.Boolean, nullable=True)
+    cost = db.Column(db.Text, nullable=True)
+    swahili_support = db.Column(db.Boolean, nullable=True)
+    keep_installed = db.Column(db.Text, nullable=True)
+    impact = db.Column(db.Text, nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    source = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.Index("ix_app_docs_app_name", "app_name"),
+        db.Index("ix_app_docs_category", "category"),
+        db.Index("ix_app_docs_impact", "impact"),
+    )
+
+    embeddings = db.relationship(
+        "AppEmbedding",
+        back_populates="app_doc",
+        cascade="all, delete-orphan",
+    )
+
+
+class AppEmbedding(db.Model):
+    """Stored embedding vectors for app records."""
+
+    __tablename__ = "app_embeddings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    app_doc_id = db.Column(db.Integer, db.ForeignKey("app_docs.id"), nullable=False)
+    embedding_json = db.Column(db.Text, nullable=False)
+    embedding_model = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.Index("ix_app_embeddings_app_doc_id", "app_doc_id"),)
+
+    app_doc = db.relationship("AppDoc", back_populates="embeddings")

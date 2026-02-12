@@ -9,7 +9,7 @@ from flask_cors import CORS
 from .config import Config
 from .db_schema import ensure_schema
 from .extensions import db
-from .routes import auth_bp, chat_bp, progress_bp
+from .routes import auth_bp, chat_bp, kb_bp, progress_bp, questionnaire_bp
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -19,7 +19,9 @@ logging.basicConfig(
 
 def log_startup(app: Flask, host: str, port: int) -> None:
     logger = logging.getLogger("backend.startup")
-    logger.info("Backend listening on http://%s:%s", host, port)
+    logger.info("Backend base URL: http://%s:%s", host, port)
+    if host == "0.0.0.0":
+        logger.info("Local dev URL: http://localhost:%s", port)
     logger.info("Registered routes:")
     for rule in sorted(app.url_map.iter_rules(), key=lambda r: r.rule):
         methods = sorted(rule.methods - {"HEAD"})
@@ -53,7 +55,9 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)
+    app.register_blueprint(kb_bp)
     app.register_blueprint(progress_bp)
+    app.register_blueprint(questionnaire_bp)
 
     @app.after_request
     def _apply_cors_hints(response):
@@ -78,8 +82,8 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
 
 if __name__ == "__main__":
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "5000"))
+    host = "0.0.0.0"
+    port = 5000
     app = create_app()
     log_startup(app, host, port)
     app.run(host=host, port=port, debug=True)

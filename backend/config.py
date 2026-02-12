@@ -20,6 +20,9 @@ class Config:
     SESSION_COOKIE_SECURE = False
     # Allow React dev server defaults (http://localhost:3000)
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "embeddinggemma")
+    APPS_RAG_ENABLED = os.getenv("APPS_RAG_ENABLED", "true")
 
 
 class TestConfig(Config):

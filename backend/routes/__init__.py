@@ -4,6 +4,8 @@ from flask import Blueprint
 auth_bp = Blueprint("auth", __name__)
 chat_bp = Blueprint("chat", __name__)
 progress_bp = Blueprint("progress", __name__)
+kb_bp = Blueprint("kb", __name__)
+questionnaire_bp = Blueprint("questionnaire", __name__)
 
 # Import route handlers to register them with the blueprints.
-from . import auth, chat, progress  # noqa: E402,F401
+from . import auth, chat, kb, progress, questionnaire  # noqa: E402,F401

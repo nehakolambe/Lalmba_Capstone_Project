@@ -1,9 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import ProgressBar from './ProgressBar';
-import { fetchHistory, fetchProgress, recordProgress, resetChat, sendMessage } from '../api';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchHistory, incrementProgress, resetChat, sendMessage } from '../api';
+import QuickReplies from './QuickReplies';
+import StartCards from './StartCards';
+import TypingPractice from './TypingPractice';
 
-function ChatWindow({ user, onLogout }) {
-  const displayName = useMemo(() => (user?.username || 'Guest').trim() || 'Guest', [user]);
+const HELP_TEXT = "I don't know how to use the keyboard and mouse. Help me.";
+
+function ChatWindow({ user, onLogout, onHome, pendingPrompt, launchTypingPractice, onStarterConsumed }) {
+  const displayName = useMemo(
+    () => (user?.full_name || user?.username || 'Guest').trim() || 'Guest',
+    [user]
+  );
   const initials = displayName.charAt(0).toUpperCase();
 
   const defaultWelcome = useMemo(
@@ -16,19 +23,23 @@ function ChatWindow({ user, onLogout }) {
 
   const [messages, setMessages] = useState([defaultWelcome]);
   const [input, setInput] = useState('');
-  const [progressEntries, setProgressEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const isMountedRef = useRef(true);
+  const inputRef = useRef(null);
+  const [typingPracticeOpen, setTypingPracticeOpen] = useState(false);
+  const [speakingIndex, setSpeakingIndex] = useState(null);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const autoSentRef = useRef(new Set());
 
   useEffect(() => {
+    setSpeechSupported(typeof window !== 'undefined' && 'speechSynthesis' in window);
     return () => {
-      isMountedRef.current = false;
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
     };
   }, []);
-
-  const maxProgress = 10;
 
   useEffect(() => {
     let mounted = true;
@@ -37,7 +48,7 @@ function ChatWindow({ user, onLogout }) {
       setLoading(true);
       setError('');
       try {
-        const [history, progress] = await Promise.all([fetchHistory(), fetchProgress()]);
+        const history = await fetchHistory();
 
         if (!mounted) return;
 
@@ -50,7 +61,6 @@ function ChatWindow({ user, onLogout }) {
           .filter(item => item.content && item.content.trim().length > 0);
 
         setMessages(parsedHistory.length ? parsedHistory : [defaultWelcome]);
-        setProgressEntries(progress);
       } catch (err) {
         if (!mounted) return;
         if (err?.status === 401 && typeof onLogout === 'function') {
@@ -58,7 +68,12 @@ function ChatWindow({ user, onLogout }) {
           return;
         }
         setMessages([defaultWelcome]);
-        setError('Unable to load your previous chat. You can still start a new conversation.');
+        const message =
+          err?.payload?.error ||
+          err?.payload?.message ||
+          err?.message ||
+          'Unable to load your previous chat. You can still start a new conversation.';
+        setError(message);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -71,58 +86,155 @@ function ChatWindow({ user, onLogout }) {
     };
   }, [defaultWelcome, onLogout, user?.id]);
 
-  async function handleSend() {
-    const trimmed = input.trim();
-    if (!trimmed || sending) return;
 
-    const userMsg = { role: 'user', content: trimmed };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setSending(true);
-    setError('');
+  const sendText = useCallback(
+    async (rawText, { clearInput = true, openTypingPractice = false } = {}) => {
+      const trimmed = (rawText || '').trim();
+      if (!trimmed || sending) return;
 
-    try {
-      const returned = await sendMessage(trimmed);
-      const assistantMessage = returned.find(entry => entry.role === 'assistant');
-      const replyText = assistantMessage?.content || '...';
-
-      if (assistantMessage) {
-        setMessages(prev => [...prev, assistantMessage]);
-      } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: replyText }]);
+      if (openTypingPractice) {
+        setTypingPracticeOpen(true);
       }
 
-      if (progressEntries.length < maxProgress) {
-        try {
-          const milestone = `Reflection ${progressEntries.length + 1}`;
-          const notes = replyText.slice(0, 200) || 'Continued guidance from Mama Akinyi.';
-          const newEntry = await recordProgress(milestone, notes);
-          setProgressEntries(prev => [...prev, newEntry]);
-        } catch (progressErr) {
-          console.warn('Failed to record progress:', progressErr);
+      const userMsg = { role: 'user', content: trimmed };
+      setMessages(prev => [...prev, userMsg]);
+      if (clearInput) setInput('');
+      setSending(true);
+      setError('');
+
+      try {
+        const { messages: returnedMessages, sources } = await sendMessage(trimmed);
+        const normalizedMessages = (returnedMessages || []).map(entry => ({
+          role: entry.role,
+          content: entry.content,
+          createdAt: entry.created_at
+        }));
+        const assistantIndex = normalizedMessages.findIndex(entry => entry.role === 'assistant');
+        if (assistantIndex >= 0) {
+          normalizedMessages[assistantIndex] = {
+            ...normalizedMessages[assistantIndex],
+            sources
+          };
+        } else {
+          normalizedMessages.push({
+            role: 'assistant',
+            content: '...',
+            sources
+          });
         }
-      }
-    } catch (err) {
-      const isAuthError = err?.status === 401;
-      let fallback = '';
-      if (isAuthError) {
-        fallback = 'Your session has expired. Please log in again.';
-      } else if (err?.network || err?.message === 'Cannot connect to server') {
-        fallback =
-          'Cannot reach the Matoso server. Confirm Flask is running on http://localhost:5000 and refresh this page.';
-      } else {
-        fallback = err?.payload?.error || err?.message || 'Something went wrong. Please try again.';
-      }
 
-      setMessages(prev => [...prev, { role: 'assistant', content: fallback }]);
-      setError(fallback);
-      if (isAuthError && typeof onLogout === 'function') {
-        onLogout();
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          const base =
+            last && last.role === 'user' && last.content === userMsg.content
+              ? prev.slice(0, -1)
+              : prev;
+          return [...base, ...normalizedMessages];
+        });
+
+        try {
+          await incrementProgress();
+        } catch (progressErr) {
+          console.warn('Failed to update progress:', progressErr);
+        }
+      } catch (err) {
+        const isAuthError = err?.status === 401;
+        let fallback = '';
+        if (isAuthError) {
+          fallback = 'Your session has expired. Please log in again.';
+        } else if (err?.network || err?.message === 'Cannot connect to server') {
+          fallback =
+            'Cannot reach the Matoso server. Confirm Flask is running on http://127.0.0.1:5000 and refresh this page.';
+        } else {
+          fallback =
+            err?.payload?.error ||
+            err?.payload?.message ||
+            err?.message ||
+            'Something went wrong. Please try again.';
+        }
+
+        if (err?.status === 503) {
+          const detail = err?.payload?.details?.reason;
+          const hint = 'Make sure Ollama is running and the model is installed.';
+          fallback = detail ? `${fallback} Reason: ${detail}. ${hint}` : `${fallback} ${hint}`;
+        }
+
+        setMessages(prev => [...prev, { role: 'assistant', content: fallback }]);
+        setError(fallback);
+        if (isAuthError && typeof onLogout === 'function') {
+          onLogout();
+        }
+      } finally {
+        setSending(false);
+        if (inputRef.current) inputRef.current.focus();
       }
-    } finally {
-      setSending(false);
+    },
+    [onLogout, sending]
+  );
+
+  const handleSend = useCallback(() => {
+    if (!input.trim()) return;
+    sendText(input, { clearInput: true });
+  }, [input, sendText]);
+
+  const handleQuickReply = useCallback(
+    text => {
+      sendText(text, { clearInput: false });
+    },
+    [sendText]
+  );
+
+  const handleHelp = useCallback(() => {
+    sendText(HELP_TEXT, { clearInput: false });
+  }, [sendText]);
+
+  const handleStartCard = useCallback(
+    card => {
+      if (!card?.prompt) return;
+      sendText(card.prompt, { clearInput: true, openTypingPractice: Boolean(card.typingPractice) });
+    },
+    [sendText]
+  );
+
+  useEffect(() => {
+    if (loading) return;
+    if (!pendingPrompt) return;
+    if (autoSentRef.current.has(pendingPrompt)) return;
+    autoSentRef.current.add(pendingPrompt);
+    sendText(pendingPrompt, { clearInput: true, openTypingPractice: Boolean(launchTypingPractice) });
+    if (typeof onStarterConsumed === 'function') {
+      onStarterConsumed();
     }
-  }
+  }, [loading, pendingPrompt, launchTypingPractice, onStarterConsumed, sendText]);
+
+  useEffect(() => {
+    if (launchTypingPractice) {
+      setTypingPracticeOpen(true);
+    }
+  }, [launchTypingPractice]);
+
+  const stopSpeaking = useCallback(() => {
+    if (!speechSupported) return;
+    window.speechSynthesis.cancel();
+    setSpeakingIndex(null);
+  }, [speechSupported]);
+
+  const handleSpeakToggle = useCallback(
+    (index, text) => {
+      if (!speechSupported) return;
+      if (speakingIndex === index) {
+        stopSpeaking();
+        return;
+      }
+      stopSpeaking();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.onend = () => setSpeakingIndex(null);
+      utterance.onerror = () => setSpeakingIndex(null);
+      window.speechSynthesis.speak(utterance);
+      setSpeakingIndex(index);
+    },
+    [speechSupported, speakingIndex, stopSpeaking]
+  );
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -136,12 +248,20 @@ function ChatWindow({ user, onLogout }) {
     try {
       await resetChat();
       setMessages([defaultWelcome]);
-      setProgressEntries([]);
     } catch (err) {
-      const message = err?.payload?.error || err?.message || 'Unable to reset chat history.';
+      const message =
+        err?.payload?.error ||
+        err?.payload?.message ||
+        err?.message ||
+        'Unable to reset chat history.';
       setError(message);
     }
   }
+
+  const isEmpty =
+    messages.length === 1 &&
+    messages[0].role === 'assistant' &&
+    messages[0].content === defaultWelcome.content;
 
   return (
     <div className="chatgpt-shell">
@@ -151,8 +271,14 @@ function ChatWindow({ user, onLogout }) {
           <p>Powered by Mama Akinyi</p>
         </div>
         <div className="chatgpt-controls">
+          <button className="ghost-btn" onClick={onHome} disabled={sending}>
+            Home
+          </button>
           <button className="ghost-btn" onClick={handleReset} disabled={loading || sending}>
             Reset chat
+          </button>
+          <button className="ghost-btn help-btn" onClick={handleHelp} disabled={sending}>
+            Help
           </button>
           <button className="ghost-btn" onClick={onLogout} disabled={sending}>
             Logout
@@ -167,23 +293,59 @@ function ChatWindow({ user, onLogout }) {
         </div>
       </header>
 
-      <div className="chatgpt-progress">
-        <ProgressBar value={Math.min(progressEntries.length, maxProgress)} max={maxProgress} />
-      </div>
-
       <div className="chatgpt-body">
         <div className="chatgpt-messages">
+          {isEmpty && (
+            <div className="chatgpt-empty">
+              <div className="empty-title">Start your first chat</div>
+              <div className="empty-subtitle">Tap a card to begin.</div>
+              <StartCards onSelect={handleStartCard} />
+            </div>
+          )}
           {messages.map((m, idx) => {
             const isAi = m.role === 'assistant';
             const avatarLabel = isAi ? 'AI' : initials;
             const nameLabel = isAi ? 'Mama Akinyi' : displayName;
+            const timestamp = m.createdAt ? new Date(m.createdAt) : new Date();
+            const timeLabel = Number.isNaN(timestamp.getTime())
+              ? ''
+              : timestamp.toLocaleString();
 
             return (
               <div key={idx} className={`message-row ${isAi ? 'ai' : 'user'}`}>
                 <div className="message-avatar">{avatarLabel}</div>
                 <div className="message-content">
                   <div className="message-name">{nameLabel}</div>
-                  <div className="message-text">{m.content}</div>
+                  <div className={`message-bubble ${isAi ? 'ai' : 'user'}`}>
+                    <div className="message-text">{m.content}</div>
+                    {timeLabel && <div className="message-time">{timeLabel}</div>}
+                  </div>
+                  {isAi && speechSupported && (
+                    <div className="message-actions">
+                      <button
+                        type="button"
+                        className="speak-btn"
+                        onClick={() => handleSpeakToggle(idx, m.content)}
+                      >
+                        {speakingIndex === idx ? 'Stop' : '🔊 Read aloud'}
+                      </button>
+                    </div>
+                  )}
+                  {isAi && Array.isArray(m.sources) && m.sources.length > 0 && (
+                    <div className="message-sources">
+                      <div className="message-sources-title">Sources</div>
+                      {m.sources.map((source, sourceIndex) => (
+                        <div key={`${source.id}-${sourceIndex}`} className="message-source">
+                          <strong>[{sourceIndex + 1}]</strong>{' '}
+                          {source.app ? `${source.app}: ` : ''}
+                          {source.snippet}
+                          {source.source_path && (
+                            <span className="message-source-path"> ({source.source_path})</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -193,14 +355,29 @@ function ChatWindow({ user, onLogout }) {
               <div className="message-avatar">AI</div>
               <div className="message-content">
                 <div className="message-name">Mama Akinyi</div>
-                <div className="message-text">Thinking...</div>
+                <div className="message-bubble ai">
+                  <div className="message-text">Thinking...</div>
+                </div>
               </div>
             </div>
           )}
         </div>
+        <TypingPractice
+          open={typingPracticeOpen}
+          displayName={displayName}
+          onClose={() => setTypingPracticeOpen(false)}
+          onSendProgress={text => sendText(text, { clearInput: false })}
+        />
         <div className="chatgpt-input">
+          {sending && <div className="typing-indicator">Mama Akinyi is typing…</div>}
+          <QuickReplies
+            onSelect={handleQuickReply}
+            hidden={input.trim().length > 0}
+            disabled={sending}
+          />
           <div className="input-bar">
             <textarea
+              ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
               placeholder="Send a message."
@@ -209,7 +386,13 @@ function ChatWindow({ user, onLogout }) {
               disabled={sending}
             />
             <button type="button" onClick={handleSend} disabled={sending || !input.trim()}>
-              {sending ? 'Sending...' : 'Send'}
+              {sending ? (
+                <>
+                  <span className="spinner" aria-hidden="true" /> Sending…
+                </>
+              ) : (
+                'Send'
+              )}
             </button>
           </div>
           {error && <p className="input-error">{error}</p>}

@@ -29,6 +29,20 @@ class OllamaError(RuntimeError):
         self.payload = payload or {}
 
 
+def _select_fallback_model(unavailable_model: str) -> Optional[str]:
+    try:
+        health = check_ollama_health(timeout=5)
+    except OllamaError as exc:
+        logger.warning("Unable to fetch Ollama models for fallback: %s", exc)
+        return None
+
+    models = [name for name in health.get("models", []) if isinstance(name, str)]
+    for name in models:
+        if name != unavailable_model:
+            return name
+    return None
+
+
 def generate_response(
     prompt: str,
     *,
@@ -73,6 +87,63 @@ def generate_response(
         if not response.ok:
             reason = data.get("error") if isinstance(data, dict) else response.text
             status = response.status_code
+            if status == 404:
+                fallback_model = _select_fallback_model(model)
+                if fallback_model and fallback_model != model:
+                    logger.warning(
+                        "Ollama model %s unavailable; retrying with %s",
+                        model,
+                        fallback_model,
+                    )
+                    fallback_payload = {**payload, "model": fallback_model}
+                    try:
+                        fallback_response = requests.post(
+                            OLLAMA_GENERATE_URL,
+                            json=fallback_payload,
+                            timeout=timeout,
+                        )
+                    except requests.RequestException as exc:
+                        last_exception = exc
+                        logger.error("Ollama request failed (fallback): %s", exc)
+                        raise OllamaError(
+                            "Could not reach the local Ollama model",
+                            reason=str(exc),
+                        ) from exc
+
+                    try:
+                        fallback_data = fallback_response.json()
+                    except ValueError as exc:
+                        logger.error("Invalid JSON from Ollama: %s", exc)
+                        raise OllamaError(
+                            "Unexpected response from local AI service",
+                            reason="invalid_json",
+                        ) from exc
+
+                    if not fallback_response.ok:
+                        fallback_reason = (
+                            fallback_data.get("error")
+                            if isinstance(fallback_data, dict)
+                            else fallback_response.text
+                        )
+                        raise OllamaError(
+                            "Ollama returned an error",
+                            reason=fallback_reason,
+                            status=fallback_response.status_code,
+                            payload=fallback_data if isinstance(fallback_data, dict) else None,
+                        )
+
+                    result = fallback_data.get("response", "")
+                    if not result or not result.strip():
+                        logger.warning(
+                            "Ollama returned an empty response for model %s",
+                            fallback_model,
+                        )
+                        raise OllamaError(
+                            "Ollama returned an empty response",
+                            reason="empty_response",
+                        )
+
+                    return result.strip()
             message = (
                 "Requested Ollama model is unavailable"
                 if status == 404
