@@ -7,7 +7,7 @@ build/
 .env
 
 # Python
-venv/
+*.venv/
 __pycache__/
 *.pyc
 
@@ -18,3 +18,4 @@ __pycache__/
 *.db
 *.db-journal
 *.db-wal
+backend/data/chroma

@@ -32,6 +32,7 @@ class OllamaError(RuntimeError):
 def generate_response(
     prompt: str,
     *,
+    system: Optional[str] = None,
     model: str = DEFAULT_MODEL,
     options: Optional[Dict[str, Any]] = None,
     timeout: int = 60,
@@ -44,8 +45,17 @@ def generate_response(
         "prompt": prompt,
         "stream": False,  # easier to consume in a web backend
     }
+    if system and system.strip():
+        payload["system"] = system.strip()
     if options:
         payload["options"] = options
+
+    # Debug output so prompt content is visible during local development/tests.
+    print("\n--- OLLAMA REQUEST PAYLOAD ---")
+    print(f"model: {payload.get('model')}")
+    print(f"system: {payload.get('system', '')}")
+    print(f"prompt: {payload.get('prompt', '')}")
+    print("--- END OLLAMA REQUEST PAYLOAD ---\n")
 
     attempts = max(1, max_attempts)
     last_exception: Optional[Exception] = None
