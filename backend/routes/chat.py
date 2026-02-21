@@ -38,11 +38,19 @@ def chat_message(user):
     if not message_text:
         return jsonify({"error": "Message text is required"}), 400
 
+    has_previous_assistant_message = (
+        Message.query.filter_by(user_id=user.id, role="assistant").first() is not None
+    )
+
     user_entry = Message(user_id=user.id, role="user", content=message_text)
     db.session.add(user_entry)
     db.session.flush()
 
-    reply_text = generate_assistant_reply(message_text, user_name=user.full_name)
+    reply_text = generate_assistant_reply(
+        message_text,
+        user_name=user.full_name,
+        is_first_turn=not has_previous_assistant_message,
+    )
 
     assistant_entry = Message(user_id=user.id, role="assistant", content=reply_text)
     db.session.add(assistant_entry)

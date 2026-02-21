@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/").rstrip("/")
 OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_HEALTH_URL = f"{OLLAMA_BASE_URL}/api/tags"
-DEFAULT_MODEL = os.getenv("OLLAMA_DEFAULT_MODEL", "llama2")
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 try:
     DEFAULT_MAX_ATTEMPTS = max(1, int(os.getenv("OLLAMA_MAX_ATTEMPTS", "3")))
 except ValueError:
@@ -32,6 +32,7 @@ class OllamaError(RuntimeError):
 def generate_response(
     prompt: str,
     *,
+    system: Optional[str] = None,
     model: str = DEFAULT_MODEL,
     options: Optional[Dict[str, Any]] = None,
     timeout: int = 60,
@@ -44,8 +45,17 @@ def generate_response(
         "prompt": prompt,
         "stream": False,  # easier to consume in a web backend
     }
+    if system and system.strip():
+        payload["system"] = system.strip()
     if options:
         payload["options"] = options
+
+    # Debug output so prompt content is visible during local development/tests.
+    print("\n--- OLLAMA REQUEST PAYLOAD ---")
+    print(f"model: {payload.get('model')}")
+    print(f"system: {payload.get('system', '')}")
+    print(f"prompt: {payload.get('prompt', '')}")
+    print("--- END OLLAMA REQUEST PAYLOAD ---\n")
 
     attempts = max(1, max_attempts)
     last_exception: Optional[Exception] = None
