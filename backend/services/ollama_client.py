@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/").rstrip("/")
 OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_HEALTH_URL = f"{OLLAMA_BASE_URL}/api/tags"
-DEFAULT_MODEL = os.getenv("OLLAMA_DEFAULT_MODEL", "llama2")
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 try:
     DEFAULT_MAX_ATTEMPTS = max(1, int(os.getenv("OLLAMA_MAX_ATTEMPTS", "3")))
 except ValueError:
