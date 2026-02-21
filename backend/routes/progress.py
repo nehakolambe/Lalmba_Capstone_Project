@@ -4,7 +4,7 @@ from flask import jsonify, request
 
 from ..extensions import db
 from ..models import Progress
-from ..utils import login_required
+from ..utils import error_response, login_required
 from . import progress_bp
 
 
@@ -29,7 +29,7 @@ def add_progress(user):
     notes = (payload.get("notes") or "").strip() or None
 
     if not milestone:
-        return jsonify({"error": "Milestone is required"}), 400
+        return error_response("Milestone is required", 400)
 
     entry = Progress(user_id=user.id, milestone=milestone, notes=notes)
     db.session.add(entry)

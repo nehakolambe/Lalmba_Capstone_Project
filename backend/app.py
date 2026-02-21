@@ -6,7 +6,7 @@ import os
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from .config import Config
+from .config import Config, _as_bool
 from .db_schema import ensure_schema
 from .extensions import db
 from .routes import auth_bp, chat_bp, progress_bp
@@ -80,6 +80,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "5000"))
+    debug = _as_bool(os.getenv("FLASK_DEBUG"), False)
     app = create_app()
     log_startup(app, host, port)
-    app.run(host=host, port=port, debug=True)
+    app.run(host=host, port=port, debug=debug)
