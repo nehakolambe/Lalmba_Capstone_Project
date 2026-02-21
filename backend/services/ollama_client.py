@@ -50,12 +50,13 @@ def generate_response(
     if options:
         payload["options"] = options
 
-    # Debug output so prompt content is visible during local development/tests.
-    print("\n--- OLLAMA REQUEST PAYLOAD ---")
-    print(f"model: {payload.get('model')}")
-    print(f"system: {payload.get('system', '')}")
-    print(f"prompt: {payload.get('prompt', '')}")
-    print("--- END OLLAMA REQUEST PAYLOAD ---\n")
+    logger.debug(
+        "Ollama request prepared model=%s system=%s prompt_chars=%s options=%s",
+        payload.get("model"),
+        bool(payload.get("system")),
+        len(payload.get("prompt", "")),
+        bool(payload.get("options")),
+    )
 
     attempts = max(1, max_attempts)
     last_exception: Optional[Exception] = None

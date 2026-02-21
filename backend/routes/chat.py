@@ -5,7 +5,7 @@ from flask import jsonify, request
 from ..extensions import db
 from ..models import Message
 from ..services.assistant import generate_assistant_reply
-from ..utils import login_required
+from ..utils import error_response, login_required
 from . import chat_bp
 
 
@@ -36,7 +36,7 @@ def chat_message(user):
     payload = request.get_json(silent=True) or {}
     message_text = (payload.get("text") or "").strip()
     if not message_text:
-        return jsonify({"error": "Message text is required"}), 400
+        return error_response("Message text is required", 400)
 
     has_previous_assistant_message = (
         Message.query.filter_by(user_id=user.id, role="assistant").first() is not None

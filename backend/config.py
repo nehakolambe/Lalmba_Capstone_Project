@@ -5,6 +5,12 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 
+def _as_bool(value: str, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Config:
     """Flask configuration with sensible defaults for local development."""
 
@@ -18,6 +24,7 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = False
+    DEBUG = _as_bool(os.getenv("FLASK_DEBUG"), False)
     # Allow React dev server defaults (http://localhost:3000)
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 

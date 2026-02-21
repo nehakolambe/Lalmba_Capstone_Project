@@ -6,7 +6,7 @@ from flask import jsonify, request, session
 
 from ..extensions import db
 from ..models import User
-from ..utils import get_current_user, login_required
+from ..utils import error_response, get_current_user, login_required
 from . import auth_bp
 
 
@@ -33,11 +33,11 @@ def login():
     try:
         username, pin = _validate_credentials(payload)
     except ValueError as exc:
-        return jsonify({"message": str(exc)}), 401
+        return error_response(str(exc), 401)
 
     user = User.query.filter_by(username=username).one_or_none()
     if not user or not user.check_pin(pin):
-        return jsonify({"message": "Invalid username or PIN."}), 401
+        return error_response("Invalid username or PIN.", 401)
 
     db.session.add(user)  # ensure attached in case of expired session
     session["user_id"] = user.id
@@ -98,18 +98,14 @@ def register():
         errors["fullName"] = "Full name is required."
 
     if errors:
-        return jsonify({"message": "Invalid registration data", "details": errors}), 400
+        return error_response("Invalid registration data", 400, details=errors)
 
     existing = User.query.filter_by(username=username).one_or_none()
     if existing:
-        return (
-            jsonify(
-                {
-                    "message": "Username is already taken.",
-                    "details": {"username": "Please choose a different username."},
-                }
-            ),
+        return error_response(
+            "Username is already taken.",
             409,
+            details={"username": "Please choose a different username."},
         )
 
     user = User(username=username, full_name=full_name, details=details or None)

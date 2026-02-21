@@ -14,11 +14,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend import create_app
 from backend.app import log_startup
+from backend.config import _as_bool
 
 app = create_app()
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "5000"))
+    debug = _as_bool(os.getenv("FLASK_DEBUG"), False)
     log_startup(app, host, port)
-    app.run(host=host, port=port, debug=True)
+    app.run(host=host, port=port, debug=debug)

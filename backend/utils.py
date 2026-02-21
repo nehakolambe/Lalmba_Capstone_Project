@@ -22,7 +22,15 @@ def login_required(view: Callable):
     def wrapped(*args, **kwargs):
         user = get_current_user()
         if not user:
-            return jsonify({"error": "Authentication required"}), 401
+            return error_response("Authentication required", 401)
         return view(user, *args, **kwargs)
 
     return wrapped
+
+
+def error_response(message: str, status: int, *, details: Optional[dict] = None):
+    """Return a backward-compatible error payload."""
+    payload = {"message": message, "error": message}
+    if details:
+        payload["details"] = details
+    return jsonify(payload), status
