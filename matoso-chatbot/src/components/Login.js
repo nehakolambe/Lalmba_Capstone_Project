@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
+import logo from '../assets/logo.png';
 
-function Login({ onLogin, onRegister }) {
+function Login({ onLogin, onRegister, initialMode = 'login' }) {
+  const [mode, setMode] = useState(initialMode);
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
   const [fullName, setFullName] = useState('');
   const [details, setDetails] = useState('');
-  const [mode, setMode] = useState('login');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -13,9 +14,7 @@ function Login({ onLogin, onRegister }) {
   function surfaceError(message = '', details) {
     const detailText =
       details && typeof details === 'object'
-        ? Object.values(details)
-            .filter(Boolean)
-            .join(' ')
+        ? Object.values(details).filter(Boolean).join(' ')
         : typeof details === 'string'
         ? details
         : '';
@@ -44,14 +43,7 @@ function Login({ onLogin, onRegister }) {
           surfaceError('Registration is currently unavailable.');
           return;
         }
-
-        const result = await onRegister({
-          fullName,
-          username,
-          pin,
-          details
-        });
-
+        const result = await onRegister({ fullName, username, pin, details });
         if (!result || !result.success) {
           surfaceError(result?.message || 'Unable to register. Please try again.', result?.details);
         } else {
@@ -62,7 +54,6 @@ function Login({ onLogin, onRegister }) {
         }
       }
     } catch (err) {
-      // TIP: A "Cannot connect to server" message usually means the Flask backend isn't reachable or CORS blocked the call.
       surfaceError(err.message || 'Unexpected error. Please try again.', err.details);
     } finally {
       setSubmitting(false);
@@ -77,7 +68,15 @@ function Login({ onLogin, onRegister }) {
 
   return (
     <form onSubmit={handleSubmit} className="login-form">
-      <h2>{mode === 'login' ? 'Welcome to Matoso Help Desk' : 'Create your Matoso account'}</h2>
+
+      <div className="login-logo">
+        <img src={logo} alt="Matoso Logo" />
+      </div>
+
+      {/* Title */}
+      <h2>
+        {mode === 'login' ? 'Welcome back!' : 'Create your Account'}
+      </h2>
 
       {mode === 'register' && (
         <label>
@@ -130,15 +129,25 @@ function Login({ onLogin, onRegister }) {
       {feedback && <p className="login-feedback">{feedback}</p>}
 
       <button type="submit" disabled={submitting}>
-        {submitting ? 'Please wait...' : mode === 'login' ? 'Login' : 'Create account'}
+        {submitting
+          ? 'Please wait...'
+          : mode === 'login'
+          ? 'Login'
+          : 'Create Account'}
       </button>
 
       <p className="login-hint">
         {mode === 'login' ? 'Need an account?' : 'Already registered?'}
-        <button type="button" className="link-button" onClick={toggleMode} disabled={submitting}>
-          {mode === 'login' ? 'Create one here' : 'Back to login'}
+        <button
+          type="button"
+          className="link-button"
+          onClick={toggleMode}
+          disabled={submitting}
+        >
+          {mode === 'login' ? 'Sign Up' : 'Back to login'}
         </button>
       </p>
+
     </form>
   );
 }
