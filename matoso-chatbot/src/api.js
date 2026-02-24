@@ -1,4 +1,3 @@
-// Keep this in sync with the Flask server host/port to avoid "Failed to fetch" errors.
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
 async function request(path, { method = 'GET', body, headers = {} } = {}) {
@@ -7,15 +6,10 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
     response = await fetch(`${API_BASE}${path}`, {
       method,
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers
-      },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: body ? JSON.stringify(body) : undefined
     });
   } catch (networkError) {
-    // TIP: "Cannot connect to server" usually means the Flask API isn't running
-    // on API_BASE or the origin is missing from Config.CORS_ORIGINS.
     const error = new Error('Cannot connect to server');
     error.cause = networkError;
     error.network = true;
@@ -24,11 +18,7 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
 
   let data = null;
   if (response.status !== 204) {
-    try {
-      data = await response.json();
-    } catch {
-      data = null;
-    }
+    try { data = await response.json(); } catch { data = null; }
   }
 
   if (!response.ok) {
@@ -46,9 +36,7 @@ export async function fetchSession() {
   try {
     const data = await request('/auth/me');
     return data.user || null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export async function login(username, pin) {
@@ -57,11 +45,7 @@ export async function login(username, pin) {
 }
 
 export async function logout() {
-  try {
-    await request('/auth/logout', { method: 'POST' });
-  } catch {
-    // Ignore network errors on logout.
-  }
+  try { await request('/auth/logout', { method: 'POST' }); } catch {}
 }
 
 export async function registerUser({ fullName, username, pin, details }) {
@@ -78,10 +62,7 @@ export async function fetchHistory(limit = 50) {
 }
 
 export async function sendMessage(text) {
-  const data = await request('/chat/message', {
-    method: 'POST',
-    body: { text }
-  });
+  const data = await request('/chat/message', { method: 'POST', body: { text } });
   return data.messages || [];
 }
 
@@ -95,9 +76,10 @@ export async function fetchProgress() {
 }
 
 export async function recordProgress(milestone, notes = '') {
-  const data = await request('/progress', {
-    method: 'POST',
-    body: { milestone, notes }
-  });
+  const data = await request('/progress', { method: 'POST', body: { milestone, notes } });
   return data.progress;
+}
+
+export async function resetProgress() {
+  await request('/progress/reset', { method: 'POST' });
 }
