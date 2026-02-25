@@ -23,7 +23,11 @@ def list_progress(user):
 @progress_bp.post("/progress")
 @login_required
 def add_progress(user):
-    """Persist a new learning milestone for the user."""
+    """Persist a new learning milestone - max 10 per user."""
+    existing_count = Progress.query.filter_by(user_id=user.id).count()
+    if existing_count >= 10:
+        return jsonify({"progress": None}), 200
+
     payload = request.get_json(silent=True) or {}
     milestone = (payload.get("milestone") or "").strip()
     notes = (payload.get("notes") or "").strip() or None
@@ -36,3 +40,12 @@ def add_progress(user):
     db.session.commit()
 
     return jsonify({"progress": entry.to_dict()}), 201
+
+
+@progress_bp.post("/progress/reset")
+@login_required
+def reset_progress(user):
+    """Delete only progress bar entries - chat history untouched."""
+    Progress.query.filter_by(user_id=user.id).delete()
+    db.session.commit()
+    return jsonify({"ok": True})

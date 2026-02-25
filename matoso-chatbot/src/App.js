@@ -55,19 +55,21 @@ function App() {
         />
       )}
 
-      {page === "login" && (
+      {page === 'login' && (
         <Login
-          initialMode="login"          
+          initialMode="login"
           onLogin={handleLogin}
           onRegister={handleRegister}
+          onBack={() => setPage('landing')}
         />
       )}
 
-      {page === "signup" && (
+      {page === 'signup' && (
         <Login
-          initialMode="register"        
+          initialMode="register"
           onLogin={handleLogin}
           onRegister={handleRegister}
+          onBack={() => setPage('landing')}
         />
       )}
 

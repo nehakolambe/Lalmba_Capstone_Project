@@ -39,10 +39,10 @@ function ProgressBar({ value, max, darkMode = false }) {
           {percent > 0 && (
             <div style={{
               position: 'absolute',
-              right: '-18px',
+              right: '-22px',
               top: '50%',
               transform: 'translateY(-50%)',
-              fontSize: '1.4rem',
+              fontSize: '2rem',
               filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
               transition: 'right 0.5s ease',
               userSelect: 'none',

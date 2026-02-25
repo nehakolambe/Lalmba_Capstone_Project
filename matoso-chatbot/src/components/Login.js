@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import logo from '../assets/logo.png';
 
-function Login({ onLogin, onRegister, initialMode = 'login' }) {
+function Login({ onLogin, onRegister, initialMode = 'login', onBack }) {
   const [mode, setMode] = useState(initialMode);
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
@@ -69,6 +69,29 @@ function Login({ onLogin, onRegister, initialMode = 'login' }) {
   return (
     <form onSubmit={handleSubmit} className="login-form">
 
+      {/* Back Arrow */}
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            alignSelf: 'flex-start',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '1.4rem',
+            color: '#228B22',
+            padding: '0',
+            marginBottom: '-8px',
+            lineHeight: 1,
+          }}
+          aria-label="Go back"
+        >
+          ←
+        </button>
+      )}
+
+      {/* Logo */}
       <div className="login-logo">
         <img src={logo} alt="Matoso Logo" />
       </div>
