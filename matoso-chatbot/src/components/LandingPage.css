@@ -1,0 +1,148 @@
+/* ── Root variables ── */
+:root {
+  --forest-green: #228B22;
+  --orange:       #FF8C00;
+  --light-orange: #FFA500;
+  --sky-blue:     #87CEEB;
+  --grass-green:  #4CAF50;
+}
+
+.landing-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #e0f7fa 0%, #b2ebf2 40%, #e8f5e9 70%);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+}
+
+/* ── Nav ── */
+.landing-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 40px;
+  background-color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-img {
+  width: 45px;
+  height: 45px;
+  object-fit: contain;
+}
+
+.nav-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.nav-btn {
+  padding: 10px 28px;
+  border: none;
+  border-radius: 25px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  letter-spacing: 0.5px;
+}
+
+.nav-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-login {
+  background-color: white;
+  color: var(--orange);
+  border: 2.5px solid var(--orange);
+}
+
+.btn-login:hover {
+  background-color: var(--orange);
+  color: white;
+}
+
+.btn-signup {
+  background-color: var(--orange);
+  color: white;
+  border: 2.5px solid var(--orange);
+}
+
+.btn-signup:hover {
+  background-color: #e07b00;
+  border-color: #e07b00;
+}
+
+/* ── Hero ── */
+.landing-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 20px 20px;
+}
+
+.hero-title {
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--orange);
+  letter-spacing: 2px;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.08);
+  margin-bottom: 16px;
+  line-height: 1.2;
+}
+
+.hero-subtitle {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--forest-green);
+  font-style: italic;
+  letter-spacing: 1px;
+}
+
+/* ── Forest Scene ── */
+.forest-scene {
+  position: relative;
+  width: 100%;
+  height: 220px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.forest-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .hero-title {
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+  }
+  .hero-subtitle {
+    font-size: 1.1rem;
+  }
+  .landing-nav {
+    padding: 12px 20px;
+  }
+  .nav-btn {
+    padding: 8px 18px;
+    font-size: 0.85rem;
+  }
+  .forest-scene {
+    height: 160px;
+  }
+}

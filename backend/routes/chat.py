@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ..models import Message, Progress  
 
 from flask import jsonify, request
 
@@ -69,7 +70,8 @@ def chat_message(user):
 @chat_bp.post("/chat/reset")
 @login_required
 def reset_chat(user):
-    """Delete all messages for the authenticated user."""
+    """Delete all messages AND progress for the authenticated user."""
     Message.query.filter_by(user_id=user.id).delete()
+    Progress.query.filter_by(user_id=user.id).delete()  # ← add this
     db.session.commit()
     return jsonify({"ok": True})

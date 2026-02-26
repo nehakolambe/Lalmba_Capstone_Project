@@ -1,81 +1,86 @@
-import { useCallback, useEffect, useState } from 'react';
-import './App.css';
-import { login as apiLogin, logout as apiLogout, fetchSession, registerUser } from './api';
-import ChatWindow from './components/ChatWindow';
-import Login from './components/Login';
+import React, { useState, useEffect } from "react";
+import LandingPage from "./components/LandingPage";
+import Login from "./components/Login";
+import ChatWindow from "./components/ChatWindow";
+import { fetchSession, login, registerUser } from "./api";
+import "./App.css";
 
 function App() {
+  const [page, setPage] = useState("landing");
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
-
-    fetchSession()
-      .then(sessionUser => {
-        if (mounted) {
-          setUser(sessionUser);
-        }
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
+    fetchSession().then((sessionUser) => {
+      if (sessionUser) {
+        setUser(sessionUser);
+        setPage("chat");
+      }
+    });
   }, []);
 
-  const handleLogin = useCallback(async (username, pin) => {
+  async function handleLogin(username, pin) {
     try {
-      const userData = await apiLogin(username, pin);
-      setUser(userData);
+      const sessionUser = await login(username, pin);
+      setUser(sessionUser);
+      setPage("chat");
       return { success: true };
-    } catch (error) {
-      const message =
-        error?.payload?.error ||
-        error?.payload?.message ||
-        error?.message ||
-        'Unable to log in. Please try again.';
-      return { success: false, message };
-    }
-  }, []);
-
-  const handleLogout = useCallback(async () => {
-    await apiLogout();
-    setUser(null);
-  }, []);
-
-  const handleRegister = useCallback(async payload => {
-    try {
-      const userData = await registerUser(payload);
-      setUser(userData);
-      return { success: true };
-    } catch (error) {
-      const details = error?.payload?.details;
-      const message =
-        error?.payload?.error ||
-        error?.payload?.message ||
-        error?.message ||
-        'Unable to register. Please try again.';
+    } catch (err) {
       return {
         success: false,
-        message,
-        details
+        message: err.message || "Login failed. Please try again.",
       };
     }
-  }, []);
+  }
 
-  if (loading) {
-    return <div className="App">Loading...</div>;
+  async function handleRegister({ fullName, username, pin, details }) {
+    try {
+      const sessionUser = await registerUser({ fullName, username, pin, details });
+      setUser(sessionUser);
+      setPage("chat");
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        message: err.message || "Registration failed. Please try again.",
+      };
+    }
   }
 
   return (
-    <div className="App">
-      {!user ? (
-        <Login onLogin={handleLogin} onRegister={handleRegister} />
-      ) : (
-        <ChatWindow user={user} onLogout={handleLogout} />
+    <div>
+      {page === "landing" && (
+        <LandingPage
+          onLogin={() => setPage("login")}
+          onSignup={() => setPage("signup")}
+        />
+      )}
+
+      {page === 'login' && (
+        <Login
+          initialMode="login"
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+          onBack={() => setPage('landing')}
+        />
+      )}
+
+      {page === 'signup' && (
+        <Login
+          initialMode="register"
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+          onBack={() => setPage('landing')}
+        />
+      )}
+
+      {page === "chat" && (
+        <ChatWindow
+          user={user}
+          onLogout={() => {
+            setUser(null);
+            setPage("landing");
+          }}
+        />
       )}
     </div>
   );
