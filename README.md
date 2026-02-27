@@ -1,4 +1,4 @@
-# Lalmba
+﻿# Lalmba
 
 Offline-first AI tutor for Endless OS laptops (Linux + Endless OS). This repo includes:
 - Flask backend (`backend/`) with SQLite, Ollama chat, and offline RAG via Chroma.
@@ -99,3 +99,7 @@ OK: Personalization checks passed.
 4) Log out, log in as User B.
 5) Ask the same question.
 6) Observe a more advanced, goal-oriented answer (e.g., mentions spreadsheets/job readiness).
+
+## UI Design
+- [UI Design Document](docs/UI_DESIGN.md)
+- [BDD Scenarios with UI](docs/BDD_WITH_UI.md)
