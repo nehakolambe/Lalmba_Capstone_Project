@@ -4,6 +4,7 @@ import {
   fetchHistory,
   fetchProgress,
   recordProgress,
+  resetProgress,
   resetChat,
   sendMessage
 } from '../api';
@@ -12,6 +13,7 @@ jest.mock('../api', () => ({
   fetchHistory: jest.fn(),
   fetchProgress: jest.fn(),
   recordProgress: jest.fn(),
+  resetProgress: jest.fn(),
   resetChat: jest.fn(),
   sendMessage: jest.fn()
 }));
@@ -23,6 +25,7 @@ beforeEach(() => {
   fetchHistory.mockResolvedValue([]);
   fetchProgress.mockResolvedValue([]);
   recordProgress.mockResolvedValue({ id: 1, milestone: 'Reflection 1' });
+  resetProgress.mockResolvedValue({});
   resetChat.mockResolvedValue({});
 });
 
@@ -69,8 +72,9 @@ test('reset chat clears current history', async () => {
   render(<ChatWindow user={user} onLogout={jest.fn()} />);
   expect(await screen.findByText(/previous response/i)).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole('button', { name: /reset chat/i }));
+  fireEvent.click(screen.getByRole('button', { name: /reset session/i }));
 
   await waitFor(() => expect(resetChat).toHaveBeenCalled());
+  await waitFor(() => expect(resetProgress).toHaveBeenCalled());
   expect(await screen.findByText(/hello alice!/i)).toBeInTheDocument();
 });

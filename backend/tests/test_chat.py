@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from backend.models import Conversation
 from backend.services.app_manifest import AppManifestEntry
 from backend.services.app_search import AppMatch
 
@@ -46,6 +47,12 @@ def test_chat_message_history_and_reset(client, registered_user_payload, monkeyp
     assert message_data["messages"][0]["role"] == "user"
     assert message_data["messages"][1]["role"] == "assistant"
     assert message_data["messages"][1]["content"] == "Mocked assistant reply"
+    assert message_data["summary_checkpoint_ran"] is False
+
+    conversation = Conversation.query.filter_by(user_id=1).first()
+    assert conversation is not None
+    assert conversation.turns_since_last_summary == 1
+    assert conversation.current_summary is None
 
     history_response = client.get("/chat/history?limit=1")
     history_data = history_response.get_json()
@@ -60,6 +67,7 @@ def test_chat_message_history_and_reset(client, registered_user_payload, monkeyp
     post_reset_data = post_reset_history.get_json()
     assert post_reset_history.status_code == 200
     assert post_reset_data["history"] == []
+    assert Conversation.query.filter_by(user_id=1).first() is None
 
 
 def test_chat_message_passes_matched_app_context(client, registered_user_payload, monkeypatch):
@@ -143,3 +151,73 @@ def test_chat_message_falls_back_when_app_search_fails(client, registered_user_p
     assert response.status_code == 201
     assert captured["message_text"] == "Is there a drawing app?"
     assert captured["kwargs"]["matched_app"] is None
+
+
+def test_chat_message_triggers_summary_checkpoint_before_sixth_turn(
+    client, registered_user_payload, monkeypatch
+):
+    _register_and_login(client, registered_user_payload)
+
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "backend.routes.chat.generate_assistant_reply",
+        lambda message_text, **kwargs: f"Reply to: {message_text}",
+    )
+
+    for index in range(5):
+        response = client.post("/chat/message", json={"text": f"Question {index + 1}"})
+        assert response.status_code == 201
+
+    captured = {}
+
+    def _fake_summary(turns):
+        captured["turns"] = turns
+        return "fifty-word summary placeholder"
+
+    monkeypatch.setattr("backend.routes.chat.generate_hidden_summary", _fake_summary)
+
+    response = client.post("/chat/message", json={"text": "Question 6"})
+    data = response.get_json()
+
+    assert response.status_code == 201
+    assert data["summary_checkpoint_ran"] is True
+    assert len(captured["turns"]) == 5
+    assert captured["turns"][0].user_text == "Question 1"
+    assert captured["turns"][-1].assistant_text == "Reply to: Question 5"
+
+    conversation = Conversation.query.filter_by(user_id=1).first()
+    assert conversation.current_summary == "fifty-word summary placeholder"
+    assert conversation.turns_since_last_summary == 1
+
+
+def test_chat_message_blocks_when_summary_generation_fails(
+    client, registered_user_payload, monkeypatch
+):
+    _register_and_login(client, registered_user_payload)
+
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "backend.routes.chat.generate_assistant_reply",
+        lambda message_text, **kwargs: f"Reply to: {message_text}",
+    )
+
+    for index in range(5):
+        response = client.post("/chat/message", json={"text": f"Question {index + 1}"})
+        assert response.status_code == 201
+
+    conversation = Conversation.query.filter_by(user_id=1).first()
+    assert conversation.turns_since_last_summary == 5
+
+    def _raise_summary_error(_turns):
+        from backend.services.ollama_client import OllamaError
+
+        raise OllamaError("summary failed", reason="boom")
+
+    monkeypatch.setattr("backend.routes.chat.generate_hidden_summary", _raise_summary_error)
+
+    response = client.post("/chat/message", json={"text": "Question 6"})
+    data = response.get_json()
+
+    assert response.status_code == 503
+    assert "conversation memory" in data["error"]
+    assert Conversation.query.filter_by(user_id=1).first().turns_since_last_summary == 5
