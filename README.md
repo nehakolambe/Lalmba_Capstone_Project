@@ -76,6 +76,9 @@ Install backend dependencies:
 pip install -r backend/requirements.txt
 ```
 
+Phase 1 app search is part of backend startup. Those dependencies now include a
+local sentence-embedding runtime for the `all-MiniLM-L6-v2` app index.
+
 ## 5. Frontend dependencies
 ```bash
 cd matoso-chatbot
@@ -95,6 +98,10 @@ Backend:
 - `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434`)
 - `OLLAMA_MODEL` (default `llama3.2:3b`)
 - `OLLAMA_MAX_ATTEMPTS`
+- `APP_MANIFEST_PATH` (default `backend/data/app_manifest.json`)
+- `APP_EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`)
+- `APP_MATCH_THRESHOLD` (default `0.35`)
+- `APP_SEARCH_ENABLED` (default `true`)
 
 Frontend:
 - `REACT_APP_API_BASE` (default `http://localhost:5000`)
@@ -134,6 +141,19 @@ Chat:
 Progress:
 - `GET /progress`
 - `POST /progress`
+
+## Local app manifest
+The backend now loads local app metadata from:
+- `backend/data/app_manifest.json`
+
+Each manifest entry must include:
+- `app_id`
+- `name`
+- `description`
+- `tutorial_steps`
+
+On server startup, the backend validates this file and builds an in-memory
+vector index from each app description.
 
 ## 9. Test commands
 Frontend tests:

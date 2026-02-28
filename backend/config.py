@@ -27,6 +27,16 @@ class Config:
     DEBUG = _as_bool(os.getenv("FLASK_DEBUG"), False)
     # Allow React dev server defaults (http://localhost:3000)
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    APP_MANIFEST_PATH = os.getenv(
+        "APP_MANIFEST_PATH",
+        str(BASE_DIR / "data" / "app_manifest.json"),
+    )
+    APP_EMBEDDING_MODEL = os.getenv("APP_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    try:
+        APP_MATCH_THRESHOLD = float(os.getenv("APP_MATCH_THRESHOLD", "0.35"))
+    except ValueError:
+        APP_MATCH_THRESHOLD = 0.35
+    APP_SEARCH_ENABLED = _as_bool(os.getenv("APP_SEARCH_ENABLED"), True)
 
 
 class TestConfig(Config):
@@ -34,3 +44,4 @@ class TestConfig(Config):
 
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    APP_SEARCH_ENABLED = False

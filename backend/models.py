@@ -23,6 +23,9 @@ class User(db.Model):
     progress_updates = db.relationship(
         "Progress", back_populates="user", cascade="all, delete-orphan"
     )
+    conversation = db.relationship(
+        "Conversation", back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
 
     def set_pin(self, raw_pin: str) -> None:
         """Hash and store the provided PIN."""
@@ -71,6 +74,29 @@ class Message(db.Model):
             "role": self.role,
             "content": self.content,
             "created_at": self.created_at.isoformat(),
+        }
+
+
+class Conversation(db.Model):
+    """Per-user chat state for rolling summaries and turn counts."""
+
+    __tablename__ = "conversations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True)
+    current_summary = db.Column(db.Text, nullable=True)
+    turns_since_last_summary = db.Column(db.Integer, nullable=False, default=0)
+
+    __table_args__ = (db.Index("ix_conversations_user_id", "user_id", unique=True),)
+
+    user = db.relationship("User", back_populates="conversation")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "current_summary": self.current_summary,
+            "turns_since_last_summary": self.turns_since_last_summary,
         }
 
 

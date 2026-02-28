@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import inspect, text
 
 from .extensions import db
-from .models import Message
+from .models import Conversation, Message
 
 
 def _ensure_column(table: str, column: str, column_type: str) -> None:
@@ -44,6 +44,23 @@ def ensure_schema() -> None:
             db.session.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_messages_created_at ON messages (created_at)"
+                )
+            )
+
+    if not inspector.has_table("conversations"):
+        Conversation.__table__.create(db.engine)
+    else:
+        _ensure_column("conversations", "user_id", "INTEGER")
+        _ensure_column("conversations", "current_summary", "TEXT")
+        _ensure_column("conversations", "turns_since_last_summary", "INTEGER NOT NULL DEFAULT 0")
+
+    if inspector.has_table("conversations"):
+        indexes = {idx["name"] for idx in inspector.get_indexes("conversations")}
+        if "ix_conversations_user_id" not in indexes:
+            db.session.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_conversations_user_id "
+                    "ON conversations (user_id)"
                 )
             )
 

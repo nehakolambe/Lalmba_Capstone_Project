@@ -10,6 +10,7 @@ from .config import Config, _as_bool
 from .db_schema import ensure_schema
 from .extensions import db
 from .routes import auth_bp, chat_bp, progress_bp
+from .services.app_search import initialize_app_search
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -50,6 +51,9 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     with app.app_context():
         db.create_all()
         ensure_schema()
+
+    if app.config.get("APP_SEARCH_ENABLED", True):
+        initialize_app_search(app)
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ProgressBar from './ProgressBar';
-import { fetchHistory, fetchProgress, recordProgress, resetProgress, sendMessage } from '../api';
+import { fetchHistory, fetchProgress, recordProgress, resetChat, resetProgress, sendMessage } from '../api';
 import logo from '../assets/logo.png';
 
 function ChatWindow({ user, onLogout }) {
@@ -20,6 +20,7 @@ function ChatWindow({ user, onLogout }) {
   const [progressEntries, setProgressEntries] = useState([]);
   const [loading, setLoading]                 = useState(true);
   const [sending, setSending]                 = useState(false);
+  const [sendPhase, setSendPhase]             = useState('');
   const [error, setError]                     = useState('');
   const [darkMode, setDarkMode]               = useState(() => {
     return localStorage.getItem('darkMode') === 'true';
@@ -30,7 +31,9 @@ function ChatWindow({ user, onLogout }) {
   const maxProgress    = 10;
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, sending]);
 
   useEffect(() => {
@@ -73,6 +76,7 @@ function ChatWindow({ user, onLogout }) {
     setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
     setInput('');
     setSending(true);
+    setSendPhase('thinking');
     setError('');
     try {
       const returned = await sendMessage(trimmed);
@@ -101,6 +105,7 @@ function ChatWindow({ user, onLogout }) {
       if (isAuthError && typeof onLogout === 'function') onLogout();
     } finally {
       setSending(false);
+      setSendPhase('');
     }
   }
 
@@ -111,7 +116,9 @@ function ChatWindow({ user, onLogout }) {
   async function handleReset() {
     setError('');
     try {
+      await resetChat();
       await resetProgress();
+      setMessages([defaultWelcome]);
       setProgressEntries([]);
     } catch (err) {
       setError(err?.payload?.error || err?.message || 'Unable to reset progress.');
@@ -264,7 +271,7 @@ function ChatWindow({ user, onLogout }) {
               </div>
             </button>
             <button className={`ghost-btn ${darkMode ? 'dark' : 'light'}`} onClick={handleReset} disabled={loading || sending}>
-              Reset Session Progress
+              Reset Session
             </button>
             <button className={`ghost-btn ${darkMode ? 'dark' : 'light'}`} onClick={onLogout} disabled={sending}>
               Logout
@@ -313,6 +320,7 @@ function ChatWindow({ user, onLogout }) {
                 <div className="message-content">
                   <div className="message-name">Mama Akinyi</div>
                   <div className="message-text thinking">
+                    <span className="thinking-label">{sendPhase === 'thinking' ? 'Thinking...' : 'Replying...'}</span>
                     <span /><span /><span />
                   </div>
                 </div>
@@ -326,12 +334,12 @@ function ChatWindow({ user, onLogout }) {
               <textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                placeholder="Type your questions here..."
+                placeholder="Send a message..."
                 onKeyDown={handleKeyDown}
                 rows={1}
                 disabled={sending}
               />
-              <button type="button" onClick={handleSend} disabled={sending || !input.trim()}>
+              <button type="button" aria-label="Send" onClick={handleSend} disabled={sending || !input.trim()}>
                 {sending ? '...' : '➤'}
               </button>
             </div>

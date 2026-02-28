@@ -1,0 +1,32 @@
+[
+  {
+    "app_id": "tux_typing",
+    "name": "Tux Typing",
+    "description": "A fun educational game that teaches touch typing and keyboard skills. It features falling letters and words that users must type to progress.",
+    "tutorial_steps": [
+      "Find the 'Tux Typing' icon on your EndlessOS app grid and open it.",
+      "Select 'Fish Cascade' from the main menu for a fun starting game.",
+      "Choose a difficulty level (like 'Easy') and start typing the letters as they fall into the water!"
+    ]
+  },
+  {
+    "app_id": "tux_paint",
+    "name": "Tux Paint",
+    "description": "A simple and creative drawing program for kids and beginners. It includes stamps, magic effects, and easy-to-use digital art tools.",
+    "tutorial_steps": [
+      "Open 'Tux Paint' from the application menu on the other device.",
+      "Click the 'New' button on the left to start with a fresh canvas.",
+      "Select a 'Stamp' or a 'Brush' from the toolbar on the right and start drawing anywhere on the screen."
+    ]
+  },
+  {
+    "app_id": "tux_math",
+    "name": "Tux of Math Command",
+    "description": "An arcade-style math game that helps practice addition, subtraction, multiplication, and division by shooting down falling math asteroids.",
+    "tutorial_steps": [
+      "Look for the 'Tux Math' penguin icon on EndlessOS and launch it.",
+      "Select 'Play Alone' and then choose 'Training Academy' to pick a specific math operation.",
+      "Solve the math problems shown on the falling asteroids and type the answer on your keyboard to zap them!"
+    ]
+  }
+]
