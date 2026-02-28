@@ -1,13 +1,19 @@
 from __future__ import annotations
-from ..models import Message, Progress  
+
+import logging
 
 from flask import jsonify, request
+from flask import current_app
 
 from ..extensions import db
-from ..models import Message
+from ..models import Message, Progress
 from ..services.assistant import generate_assistant_reply
+from ..services.app_search import AppMatch, search_apps
+from ..services.prompts import MatchedAppContext
 from ..utils import error_response, login_required
 from . import chat_bp
+
+logger = logging.getLogger(__name__)
 
 
 @chat_bp.get("/chat/history")
@@ -47,10 +53,12 @@ def chat_message(user):
     db.session.add(user_entry)
     db.session.flush()
 
+    matched_app = _find_matched_app(message_text)
     reply_text = generate_assistant_reply(
         message_text,
         user_name=user.full_name,
         is_first_turn=not has_previous_assistant_message,
+        matched_app=matched_app,
     )
 
     assistant_entry = Message(user_id=user.id, role="assistant", content=reply_text)
@@ -72,6 +80,36 @@ def chat_message(user):
 def reset_chat(user):
     """Delete all messages AND progress for the authenticated user."""
     Message.query.filter_by(user_id=user.id).delete()
-    Progress.query.filter_by(user_id=user.id).delete()  # ← add this
+    Progress.query.filter_by(user_id=user.id).delete()
     db.session.commit()
     return jsonify({"ok": True})
+
+
+def _find_matched_app(message_text: str) -> MatchedAppContext | None:
+    """Look up the best matching local app for a user message."""
+    try:
+        match = search_apps(current_app, message_text)
+    except Exception:
+        logger.exception("App search failed; continuing without app context")
+        return None
+
+    if match is None:
+        logger.debug("No app match found for current user message")
+        return None
+
+    logger.info(
+        "Matched app %s (%s) with score %.3f",
+        match.app.app_id,
+        match.app.name,
+        match.score,
+    )
+    return _build_matched_app_context(match)
+
+
+def _build_matched_app_context(match: AppMatch) -> MatchedAppContext:
+    return MatchedAppContext(
+        app_id=match.app.app_id,
+        name=match.app.name,
+        description=match.app.description,
+        score=match.score,
+    )

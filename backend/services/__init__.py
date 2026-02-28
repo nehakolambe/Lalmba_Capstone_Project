@@ -1,1 +1,1 @@
-# Service package marker.
+"""Backend service layer modules."""
