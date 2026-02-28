@@ -14,6 +14,10 @@ OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_HEALTH_URL = f"{OLLAMA_BASE_URL}/api/tags"
 DEFAULT_MODEL = os.getenv("OLLAMA_DEFAULT_MODEL", "llama2")
 try:
+    DEFAULT_TIMEOUT_SECONDS = max(10, int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120")))
+except ValueError:
+    DEFAULT_TIMEOUT_SECONDS = 120
+try:
     DEFAULT_MAX_ATTEMPTS = max(1, int(os.getenv("OLLAMA_MAX_ATTEMPTS", "3")))
 except ValueError:
     DEFAULT_MAX_ATTEMPTS = 3
@@ -48,7 +52,7 @@ def generate_response(
     *,
     model: str = DEFAULT_MODEL,
     options: Optional[Dict[str, Any]] = None,
-    timeout: int = 60,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
 ) -> str:
     """Send a prompt to the local Ollama instance and return the generated text."""
@@ -69,7 +73,16 @@ def generate_response(
             response = requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=timeout)
         except requests.RequestException as exc:
             last_exception = exc
-            logger.error("Ollama request failed (attempt %s/%s): %s", attempt, attempts, exc)
+            if isinstance(exc, requests.Timeout):
+                logger.warning(
+                    "Ollama request timed out (attempt %s/%s, timeout=%ss): %s",
+                    attempt,
+                    attempts,
+                    timeout,
+                    exc,
+                )
+            else:
+                logger.error("Ollama request failed (attempt %s/%s): %s", attempt, attempts, exc)
             if attempt == attempts:
                 raise OllamaError(
                     "Could not reach the local Ollama model",

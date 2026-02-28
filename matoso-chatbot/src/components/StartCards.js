@@ -2,11 +2,10 @@ import React from 'react';
 
 export const START_CARDS = [
   {
-    id: 'typing',
-    label: 'Learn typing',
-    icon: '⌨️',
-    prompt: "I'm new to computers. Teach me typing step-by-step using very simple instructions.",
-    typingPractice: true
+    id: 'internet-basics',
+    label: 'Internet basics',
+    icon: 'WEB',
+    prompt: "I'm new to computers. Teach me internet basics and online safety step-by-step using very simple instructions."
   },
   {
     id: 'english',

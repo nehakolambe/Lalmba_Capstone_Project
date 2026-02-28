@@ -43,6 +43,8 @@ python backend/scripts/ingest.py --source knowledge_base/apps --persist backend/
 - `CORS_ORIGINS` - comma-separated list of allowed frontend origins.
 - `OLLAMA_BASE_URL` - Ollama host/port (default `http://localhost:11434`).
 - `OLLAMA_DEFAULT_MODEL` - chat model (default `llama2`).
+- `OLLAMA_TIMEOUT_SECONDS` - max wait for Ollama generation calls (default `120`).
+- `OLLAMA_FALLBACK_ENABLED` - return a basic offline reply when Ollama is unavailable (default `true`).
 - `OLLAMA_EMBED_MODEL` - embedding model (default `nomic-embed-text`).
 - `CHROMA_PERSIST_DIR` - Chroma storage (default `backend/data/chroma`).
 - `CHROMA_COLLECTION` - Chroma collection (default `app_knowledge`).

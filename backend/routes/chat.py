@@ -13,6 +13,7 @@ from ..extensions import db
 from ..models import Message, QuestionnaireResponse
 from ..rag.retriever import retrieve_chunks
 from ..retrieval_apps import has_app_embeddings, retrieve_top_k_apps
+from ..services.assistant import generate_assistant_reply
 from ..services.ollama_client import OllamaError, generate_response
 from ..utils import login_required
 from . import chat_bp
@@ -262,25 +263,39 @@ def chat_message(user):
             profile_summary,
         )
 
+    used_fallback = False
+    fallback_reason = ""
     try:
         reply_text = generate_response(prompt)
     except OllamaError as exc:
+        fallback_enabled = current_app.config.get("OLLAMA_FALLBACK_ENABLED", True)
+        if isinstance(fallback_enabled, str):
+            fallback_enabled = fallback_enabled.strip().lower() in {"1", "true", "yes", "y", "on"}
+        fallback_reason = getattr(exc, "reason", str(exc))
         logger.warning(
             "chat_message ollama_error id=%s user_id=%s reason=%s",
             request_id,
             user.id,
-            getattr(exc, "reason", str(exc)),
+            fallback_reason,
         )
-        db.session.rollback()
-        return (
-            jsonify(
-                {
-                    "error": "Local AI model is unavailable.",
-                    "details": {"reason": getattr(exc, "reason", str(exc))},
-                }
-            ),
-            503,
-        )
+        if not fallback_enabled:
+            db.session.rollback()
+            return (
+                jsonify(
+                    {
+                        "error": "Local AI model is unavailable.",
+                        "details": {"reason": fallback_reason},
+                    }
+                ),
+                503,
+            )
+
+        display_name = (user.full_name or user.username or "").strip() or None
+        reply_text = generate_assistant_reply(message_text, user_name=display_name)
+        offline_notice = "Using offline fallback because Ollama is unavailable right now."
+        if offline_notice.lower() not in reply_text.lower():
+            reply_text = f"{reply_text}\n\n{offline_notice}"
+        used_fallback = True
 
     if app_question and not apps_db_ready:
         notice = "Apps database not loaded yet."
@@ -303,6 +318,11 @@ def chat_message(user):
         "messages": [user_entry.to_dict(), assistant_entry.to_dict()],
         "sources": sources,
     }
+    if used_fallback:
+        response_payload["meta"] = {
+            "fallback": True,
+            "reason": fallback_reason,
+        }
     if is_dev:
         response_payload["debug_profile"] = profile_summary or ""
 

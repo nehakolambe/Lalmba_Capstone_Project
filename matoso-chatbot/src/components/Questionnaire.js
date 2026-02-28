@@ -222,6 +222,7 @@ function Questionnaire({ user, initialAnswers, onSubmit, onCancel, submitting, e
                 </option>
               ))}
             </select>
+            <span className="field-help">How much time you can spend learning each week.</span>
             {touched.hours_per_week && validation.hours_per_week && (
               <span className="field-error">{validation.hours_per_week}</span>
             )}
