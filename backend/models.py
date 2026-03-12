@@ -20,6 +20,9 @@ class User(db.Model):
     messages = db.relationship(
         "Message", back_populates="user", cascade="all, delete-orphan"
     )
+    chat_threads = db.relationship(
+        "ChatThread", back_populates="user", cascade="all, delete-orphan"
+    )
     progress_updates = db.relationship(
         "Progress", back_populates="user", cascade="all, delete-orphan"
     )
@@ -55,6 +58,7 @@ class Message(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    thread_id = db.Column(db.Integer, db.ForeignKey("chat_threads.id"), nullable=True)
     role = db.Column(db.String(32), nullable=False)  # "user" or "assistant"
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -62,18 +66,64 @@ class Message(db.Model):
     __table_args__ = (
         db.CheckConstraint("role IN ('user','assistant')", name="ck_messages_role"),
         db.Index("ix_messages_user_id", "user_id"),
+        db.Index("ix_messages_thread_id", "thread_id"),
         db.Index("ix_messages_created_at", "created_at"),
     )
 
     user = db.relationship("User", back_populates="messages")
+    thread = db.relationship("ChatThread", back_populates="messages")
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "thread_id": self.thread_id,
             "role": self.role,
             "content": self.content,
             "created_at": self.created_at.isoformat(),
+        }
+
+
+class ChatThread(db.Model):
+    """A user-owned chat thread with its own rolling memory state."""
+
+    __tablename__ = "chat_threads"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    title = db.Column(db.String(255), nullable=False, default="New chat")
+    current_summary = db.Column(db.Text, nullable=True)
+    turns_since_last_summary = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    __table_args__ = (
+        db.Index("ix_chat_threads_user_id", "user_id"),
+        db.Index("ix_chat_threads_updated_at", "updated_at"),
+    )
+
+    user = db.relationship("User", back_populates="chat_threads")
+    messages = db.relationship(
+        "Message", back_populates="thread", cascade="all, delete-orphan"
+    )
+    progress_entries = db.relationship(
+        "Progress", back_populates="thread", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "title": self.title,
+            "current_summary": self.current_summary,
+            "turns_since_last_summary": self.turns_since_last_summary,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
         }
 
 
@@ -107,16 +157,19 @@ class Progress(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    thread_id = db.Column(db.Integer, db.ForeignKey("chat_threads.id"), nullable=True)
     milestone = db.Column(db.String(255), nullable=False)
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     user = db.relationship("User", back_populates="progress_updates")
+    thread = db.relationship("ChatThread", back_populates="progress_entries")
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "thread_id": self.thread_id,
             "milestone": self.milestone,
             "notes": self.notes,
             "created_at": self.created_at.isoformat(),

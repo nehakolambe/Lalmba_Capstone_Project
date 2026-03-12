@@ -126,13 +126,13 @@ const LandingPage = ({ onLogin, onSignup }) => {
             {/* head */}
             <circle cx="15" cy="38" r="22" fill="#90A4AE"/>
             {/* trunk */}
-            <path d="M8,55 Q0,75 10,85" stroke="#78909C" stroke-width="8" fill="none" stroke-linecap="round"/>
+            <path d="M8,55 Q0,75 10,85" stroke="#78909C" strokeWidth="8" fill="none" strokeLinecap="round"/>
             {/* ear */}
             <ellipse cx="0" cy="38" rx="12" ry="18" fill="#78909C"/>
             {/* eye */}
             <circle cx="20" cy="32" r="3" fill="#333"/>
             {/* tusk */}
-            <path d="M10,50 Q5,58 12,62" stroke="ivory" stroke-width="4" fill="none"/>
+            <path d="M10,50 Q5,58 12,62" stroke="ivory" strokeWidth="4" fill="none"/>
             {/* legs */}
             <rect x="10" y="78" width="14" height="22" rx="4" fill="#78909C"/>
             <rect x="28" y="78" width="14" height="22" rx="4" fill="#78909C"/>
@@ -162,7 +162,7 @@ const LandingPage = ({ onLogin, onSignup }) => {
             <rect x="60" y="54" width="10" height="18" rx="3" fill="#FFA726"/>
             <rect x="74" y="54" width="10" height="18" rx="3" fill="#FFA726"/>
             {/* tail */}
-            <path d="M85,38 Q105,30 100,50" stroke="#FFA726" stroke-width="5" fill="none"/>
+            <path d="M85,38 Q105,30 100,50" stroke="#FFA726" strokeWidth="5" fill="none"/>
             <circle cx="100" cy="52" r="6" fill="#E65100"/>
           </g>
 
@@ -179,17 +179,17 @@ const LandingPage = ({ onLogin, onSignup }) => {
             {/* eye */}
             <circle cx="16" cy="32" r="3" fill="#333"/>
             {/* stripes body */}
-            <path d="M20,32 Q25,50 20,68" stroke="#333" stroke-width="4" fill="none"/>
-            <path d="M30,30 Q36,50 32,70" stroke="#333" stroke-width="4" fill="none"/>
-            <path d="M42,30 Q48,50 44,70" stroke="#333" stroke-width="4" fill="none"/>
-            <path d="M54,32 Q58,50 55,68" stroke="#333" stroke-width="4" fill="none"/>
+            <path d="M20,32 Q25,50 20,68" stroke="#333" strokeWidth="4" fill="none"/>
+            <path d="M30,30 Q36,50 32,70" stroke="#333" strokeWidth="4" fill="none"/>
+            <path d="M42,30 Q48,50 44,70" stroke="#333" strokeWidth="4" fill="none"/>
+            <path d="M54,32 Q58,50 55,68" stroke="#333" strokeWidth="4" fill="none"/>
             {/* stripes head */}
-            <path d="M6,28 Q12,36 6,44" stroke="#333" stroke-width="3" fill="none"/>
+            <path d="M6,28 Q12,36 6,44" stroke="#333" strokeWidth="3" fill="none"/>
             {/* legs */}
             <rect x="16" y="65" width="10" height="22" rx="3" fill="white"/>
-            <line x1="16" x2="26" y1="72" y2="72" stroke="#333" stroke-width="2"/>
+            <line x1="16" x2="26" y1="72" y2="72" stroke="#333" strokeWidth="2"/>
             <rect x="30" y="65" width="10" height="22" rx="3" fill="white"/>
-            <line x1="30" x2="40" y1="72" y2="72" stroke="#333" stroke-width="2"/>
+            <line x1="30" x2="40" y1="72" y2="72" stroke="#333" strokeWidth="2"/>
             <rect x="44" y="65" width="10" height="22" rx="3" fill="white"/>
             <rect x="58" y="65" width="10" height="22" rx="3" fill="white"/>
           </g>
@@ -197,7 +197,7 @@ const LandingPage = ({ onLogin, onSignup }) => {
           {/* ── Parrot on branch ── */}
           <g transform="translate(1020, 60)">
             {/* branch */}
-            <path d="M0,40 Q40,35 80,40" stroke="#5D4037" stroke-width="6" fill="none"/>
+            <path d="M0,40 Q40,35 80,40" stroke="#5D4037" strokeWidth="6" fill="none"/>
             {/* body */}
             <ellipse cx="30" cy="28" rx="12" ry="16" fill="#43A047"/>
             {/* head */}
@@ -210,11 +210,11 @@ const LandingPage = ({ onLogin, onSignup }) => {
             {/* wing */}
             <ellipse cx="20" cy="28" rx="8" ry="14" fill="#1565C0"/>
             {/* tail */}
-            <path d="M30,42 Q25,60 20,70" stroke="#1565C0" stroke-width="5" fill="none"/>
-            <path d="M30,42 Q30,62 30,72" stroke="#43A047" stroke-width="5" fill="none"/>
+            <path d="M30,42 Q25,60 20,70" stroke="#1565C0" strokeWidth="5" fill="none"/>
+            <path d="M30,42 Q30,62 30,72" stroke="#43A047" strokeWidth="5" fill="none"/>
             {/* feet */}
-            <line x1="26" y1="42" x2="20" y2="50" stroke="#FFA726" stroke-width="3"/>
-            <line x1="34" y1="42" x2="40" y2="50" stroke="#FFA726" stroke-width="3"/>
+            <line x1="26" y1="42" x2="20" y2="50" stroke="#FFA726" strokeWidth="3"/>
+            <line x1="34" y1="42" x2="40" y2="50" stroke="#FFA726" strokeWidth="3"/>
           </g>
 
           {/* ── Butterfly ── */}
@@ -227,8 +227,8 @@ const LandingPage = ({ onLogin, onSignup }) => {
             {/* body */}
             <ellipse cx="25" cy="25" rx="4" ry="12" fill="#4A148C"/>
             {/* antennae */}
-            <path d="M22,14 Q15,5 12,2" stroke="#4A148C" stroke-width="1.5" fill="none"/>
-            <path d="M28,14 Q35,5 38,2" stroke="#4A148C" stroke-width="1.5" fill="none"/>
+            <path d="M22,14 Q15,5 12,2" stroke="#4A148C" strokeWidth="1.5" fill="none"/>
+            <path d="M28,14 Q35,5 38,2" stroke="#4A148C" strokeWidth="1.5" fill="none"/>
             <circle cx="12" cy="2" r="2.5" fill="#4A148C"/>
             <circle cx="38" cy="2" r="2.5" fill="#4A148C"/>
           </g>
@@ -252,23 +252,23 @@ const LandingPage = ({ onLogin, onSignup }) => {
             {/* nose */}
             <ellipse cx="20" cy="27" rx="3" ry="2" fill="#5D4037"/>
             {/* arms */}
-            <path d="M6,40 Q-5,50 0,60"  stroke="#795548" stroke-width="7" fill="none" stroke-linecap="round"/>
-            <path d="M34,40 Q45,50 40,60" stroke="#795548" stroke-width="7" fill="none" stroke-linecap="round"/>
+            <path d="M6,40 Q-5,50 0,60"  stroke="#795548" strokeWidth="7" fill="none" strokeLinecap="round"/>
+            <path d="M34,40 Q45,50 40,60" stroke="#795548" strokeWidth="7" fill="none" strokeLinecap="round"/>
             {/* legs */}
-            <path d="M12,60 Q8,72 12,80"  stroke="#795548" stroke-width="7" fill="none" stroke-linecap="round"/>
-            <path d="M28,60 Q32,72 28,80" stroke="#795548" stroke-width="7" fill="none" stroke-linecap="round"/>
+            <path d="M12,60 Q8,72 12,80"  stroke="#795548" strokeWidth="7" fill="none" strokeLinecap="round"/>
+            <path d="M28,60 Q32,72 28,80" stroke="#795548" strokeWidth="7" fill="none" strokeLinecap="round"/>
             {/* tail */}
-            <path d="M34,55 Q55,50 50,35" stroke="#795548" stroke-width="5" fill="none" stroke-linecap="round"/>
+            <path d="M34,55 Q55,50 50,35" stroke="#795548" strokeWidth="5" fill="none" strokeLinecap="round"/>
           </g>
 
           {/* ── Foreground grass tufts ── */}
-          <path d="M0,165 Q10,150 20,165"   stroke="#2E7D32" stroke-width="3" fill="none"/>
-          <path d="M30,165 Q40,148 50,165"  stroke="#2E7D32" stroke-width="3" fill="none"/>
-          <path d="M200,162 Q210,148 220,162" stroke="#388E3C" stroke-width="3" fill="none"/>
-          <path d="M500,163 Q510,148 520,163" stroke="#2E7D32" stroke-width="3" fill="none"/>
-          <path d="M900,163 Q910,148 920,163" stroke="#388E3C" stroke-width="3" fill="none"/>
-          <path d="M1200,162 Q1210,148 1220,162" stroke="#2E7D32" stroke-width="3" fill="none"/>
-          <path d="M1400,165 Q1415,148 1430,165" stroke="#388E3C" stroke-width="3" fill="none"/>
+          <path d="M0,165 Q10,150 20,165"   stroke="#2E7D32" strokeWidth="3" fill="none"/>
+          <path d="M30,165 Q40,148 50,165"  stroke="#2E7D32" strokeWidth="3" fill="none"/>
+          <path d="M200,162 Q210,148 220,162" stroke="#388E3C" strokeWidth="3" fill="none"/>
+          <path d="M500,163 Q510,148 520,163" stroke="#2E7D32" strokeWidth="3" fill="none"/>
+          <path d="M900,163 Q910,148 920,163" stroke="#388E3C" strokeWidth="3" fill="none"/>
+          <path d="M1200,162 Q1210,148 1220,162" stroke="#2E7D32" strokeWidth="3" fill="none"/>
+          <path d="M1400,165 Q1415,148 1430,165" stroke="#388E3C" strokeWidth="3" fill="none"/>
 
           {/* ── Sun ── */}
           <circle cx="1380" cy="30" r="28" fill="#FDD835" opacity="0.9"/>

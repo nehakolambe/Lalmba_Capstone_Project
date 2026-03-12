@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from .ollama_client import OllamaError, generate_response
 from .prompts import (
@@ -13,6 +14,10 @@ from .prompts import (
 from .conversation_state import CompletedTurn
 
 logger = logging.getLogger(__name__)
+LEADING_GREETING_PATTERN = re.compile(
+    r"^\s*(?:hi|hello|hey|jumbo|jambo)\b(?:\s+[A-Za-z][A-Za-z' -]{0,40})?(?:[!,.:\-]+\s*|\s+)",
+    re.IGNORECASE,
+)
 
 
 def generate_assistant_reply(
@@ -43,11 +48,12 @@ def generate_assistant_reply(
     )
 
     try:
-        return generate_response(
+        reply = generate_response(
             user_prompt,
             system=SYSTEM_PROMPT,
             timeout=120,  # first call can be slow if model is cold
         )
+        return _strip_repeated_greeting(reply, is_first_turn=is_first_turn)
 
     except OllamaError as e:
         logger.exception("Ollama failed: %s (reason=%s status=%s)", e, getattr(e, "reason", None), getattr(e, "status", None))
@@ -64,3 +70,10 @@ def generate_hidden_summary(turns: list[CompletedTurn]) -> str:
         model="llama3.2:3b",
         timeout=120,
     )
+
+
+def _strip_repeated_greeting(reply_text: str, *, is_first_turn: bool) -> str:
+    """Remove leading greetings without changing the rest of the reply."""
+    cleaned = (reply_text or "").strip()
+    updated = LEADING_GREETING_PATTERN.sub("", cleaned, count=1).strip()
+    return updated or cleaned

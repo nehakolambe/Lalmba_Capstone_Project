@@ -45,7 +45,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
         resources={r"/*": {"origins": origins or ["http://localhost:3000"]}},
         supports_credentials=True,
         allow_headers=["Content-Type"],
-        methods=["GET", "POST", "OPTIONS"],
+        methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     )
 
     with app.app_context():
@@ -53,7 +53,12 @@ def create_app(config_class: type[Config] = Config) -> Flask:
         ensure_schema()
 
     if app.config.get("APP_SEARCH_ENABLED", True):
-        initialize_app_search(app)
+        try:
+            initialize_app_search(app)
+        except Exception:
+            logging.getLogger("backend.startup").exception(
+                "App search failed to initialize; continuing without retrieval support"
+            )
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)
@@ -65,7 +70,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
         if request.method == "OPTIONS":
             response.headers.setdefault(
                 "Access-Control-Allow-Methods",
-                "GET,POST,OPTIONS",
+                "GET,POST,PATCH,DELETE,OPTIONS",
             )
             response.headers.setdefault(
                 "Access-Control-Allow-Headers",

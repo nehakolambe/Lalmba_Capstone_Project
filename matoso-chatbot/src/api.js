@@ -56,30 +56,74 @@ export async function registerUser({ fullName, username, pin, details }) {
   return data.user;
 }
 
-export async function fetchHistory(limit = 50) {
-  const data = await request(`/chat/history?limit=${limit}`);
+export async function fetchThreads() {
+  const data = await request('/chat/threads');
+  return data.threads || [];
+}
+
+export async function createThread(title = '') {
+  const data = await request('/chat/threads', {
+    method: 'POST',
+    body: title ? { title } : {}
+  });
+  return data.thread;
+}
+
+export async function renameThread(threadId, title) {
+  const data = await request(`/chat/threads/${threadId}`, {
+    method: 'PATCH',
+    body: { title }
+  });
+  return data.thread;
+}
+
+export async function deleteThread(threadId) {
+  await request(`/chat/threads/${threadId}`, { method: 'DELETE' });
+}
+
+export async function fetchHistory(threadId, limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (threadId != null) params.set('thread_id', String(threadId));
+  const data = await request(`/chat/history?${params.toString()}`);
   return data.history || [];
 }
 
-export async function sendMessage(text) {
-  const data = await request('/chat/message', { method: 'POST', body: { text } });
-  return data.messages || [];
+export async function sendMessage(threadId, text) {
+  const data = await request('/chat/message', {
+    method: 'POST',
+    body: { thread_id: threadId, text }
+  });
+  return {
+    thread: data.thread || null,
+    messages: data.messages || []
+  };
 }
 
-export async function resetChat() {
-  await request('/chat/reset', { method: 'POST' });
+export async function resetChat(threadId) {
+  const data = await request('/chat/reset', {
+    method: 'POST',
+    body: { thread_id: threadId }
+  });
+  return data.thread || null;
 }
 
-export async function fetchProgress() {
-  const data = await request('/progress');
+export async function fetchProgress(threadId) {
+  const suffix = threadId != null ? `?thread_id=${encodeURIComponent(threadId)}` : '';
+  const data = await request(`/progress${suffix}`);
   return data.progress || [];
 }
 
-export async function recordProgress(milestone, notes = '') {
-  const data = await request('/progress', { method: 'POST', body: { milestone, notes } });
+export async function recordProgress(threadId, milestone, notes = '') {
+  const data = await request('/progress', {
+    method: 'POST',
+    body: { thread_id: threadId, milestone, notes }
+  });
   return data.progress;
 }
 
-export async function resetProgress() {
-  await request('/progress/reset', { method: 'POST' });
+export async function resetProgress(threadId) {
+  await request('/progress/reset', {
+    method: 'POST',
+    body: { thread_id: threadId }
+  });
 }

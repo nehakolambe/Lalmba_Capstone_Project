@@ -1,7 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ChatSidebar from './ChatSidebar';
 import ProgressBar from './ProgressBar';
-import { fetchHistory, fetchProgress, recordProgress, resetChat, resetProgress, sendMessage } from '../api';
+import {
+  createThread,
+  deleteThread,
+  fetchHistory,
+  fetchProgress,
+  fetchThreads,
+  recordProgress,
+  renameThread,
+  resetChat,
+  sendMessage
+} from '../api';
 import logo from '../assets/logo.png';
+
+function sortThreads(list) {
+  return [...list].sort((left, right) => {
+    const leftTime = Date.parse(left.updated_at || left.created_at || 0);
+    const rightTime = Date.parse(right.updated_at || right.created_at || 0);
+    return rightTime - leftTime;
+  });
+}
 
 function ChatWindow({ user, onLogout }) {
   const displayName = useMemo(() => (user?.username || 'Guest').trim() || 'Guest', [user]);
@@ -16,19 +35,29 @@ function ChatWindow({ user, onLogout }) {
   );
 
   const [messages, setMessages]               = useState([defaultWelcome]);
+  const [threads, setThreads]                 = useState([]);
+  const [activeThreadId, setActiveThreadId]   = useState(null);
   const [input, setInput]                     = useState('');
   const [progressEntries, setProgressEntries] = useState([]);
+  const [loadingThreads, setLoadingThreads]   = useState(true);
   const [loading, setLoading]                 = useState(true);
   const [sending, setSending]                 = useState(false);
+  const [creatingThread, setCreatingThread]   = useState(false);
+  const [threadBusyId, setThreadBusyId]       = useState(null);
+  const [renamingThreadId, setRenamingThreadId] = useState(null);
+  const [renameValue, setRenameValue]         = useState('');
   const [sendPhase, setSendPhase]             = useState('');
   const [error, setError]                     = useState('');
   const [darkMode, setDarkMode]               = useState(() => {
     return localStorage.getItem('darkMode') === 'true';
   });
 
-  const isMountedRef   = useRef(true);
   const messagesEndRef = useRef(null);
   const maxProgress    = 10;
+  const currentThread = useMemo(
+    () => threads.find(thread => thread.id === activeThreadId) || null,
+    [activeThreadId, threads]
+  );
 
   useEffect(() => {
     if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
@@ -37,55 +66,205 @@ function ChatWindow({ user, onLogout }) {
   }, [messages, sending]);
 
   useEffect(() => {
-    return () => { isMountedRef.current = false; };
-  }, []);
-
-  useEffect(() => {
     localStorage.setItem('darkMode', darkMode);
   }, [darkMode]);
 
   useEffect(() => {
     let mounted = true;
-    async function loadData() {
+    async function loadThreadsForUser() {
+      setLoadingThreads(true);
+      setError('');
+      try {
+        const loadedThreads = sortThreads(await fetchThreads());
+        if (!mounted) return;
+        setThreads(loadedThreads);
+        setActiveThreadId(prevActiveId => {
+          if (prevActiveId && loadedThreads.some(thread => thread.id === prevActiveId)) {
+            return prevActiveId;
+          }
+          return loadedThreads[0]?.id ?? null;
+        });
+      } catch (err) {
+        if (!mounted) return;
+        if (err?.status === 401 && typeof onLogout === 'function') {
+          onLogout();
+          return;
+        }
+        setThreads([]);
+        setActiveThreadId(null);
+        setMessages([defaultWelcome]);
+        setProgressEntries([]);
+        setError('Unable to load your chats right now. Please try again.');
+      } finally {
+        if (mounted) setLoadingThreads(false);
+      }
+    }
+    loadThreadsForUser();
+    return () => { mounted = false; };
+  }, [defaultWelcome, onLogout, user?.id]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!activeThreadId) {
+      setLoading(false);
+      setMessages([defaultWelcome]);
+      setProgressEntries([]);
+      return () => { mounted = false; };
+    }
+
+    async function loadThreadData() {
       setLoading(true);
       setError('');
       try {
-        const [history, progress] = await Promise.all([fetchHistory(), fetchProgress()]);
+        const [history, progress] = await Promise.all([
+          fetchHistory(activeThreadId),
+          fetchProgress(activeThreadId)
+        ]);
         if (!mounted) return;
         const parsedHistory = history
-          .map(entry => ({ role: entry.role, content: entry.content, createdAt: entry.created_at }))
+          .map(entry => ({ id: entry.id, role: entry.role, content: entry.content, createdAt: entry.created_at }))
           .filter(item => item.content && item.content.trim().length > 0);
         setMessages(parsedHistory.length ? parsedHistory : [defaultWelcome]);
         setProgressEntries(progress.slice(0, maxProgress));
       } catch (err) {
         if (!mounted) return;
-        if (err?.status === 401 && typeof onLogout === 'function') { onLogout(); return; }
+        if (err?.status === 401 && typeof onLogout === 'function') {
+          onLogout();
+          return;
+        }
         setMessages([defaultWelcome]);
-        setError('Unable to load your previous chat. You can still start a new conversation.');
+        setProgressEntries([]);
+        setError('Unable to load this chat. You can still start a new conversation.');
       } finally {
         if (mounted) setLoading(false);
       }
     }
-    loadData();
+
+    loadThreadData();
     return () => { mounted = false; };
-  }, [defaultWelcome, onLogout, user?.id]);
+  }, [activeThreadId, defaultWelcome, onLogout]);
+
+  function upsertThread(thread) {
+    if (!thread) return;
+    setThreads(prevThreads => sortThreads([
+      thread,
+      ...prevThreads.filter(existingThread => existingThread.id !== thread.id)
+    ]));
+  }
+
+  async function handleCreateThread() {
+    if (creatingThread) return;
+    setCreatingThread(true);
+    setError('');
+    setRenamingThreadId(null);
+    try {
+      const thread = await createThread();
+      upsertThread(thread);
+      setActiveThreadId(thread.id);
+      setMessages([defaultWelcome]);
+      setProgressEntries([]);
+      setInput('');
+    } catch (err) {
+      if (err?.status === 401 && typeof onLogout === 'function') {
+        onLogout();
+        return;
+      }
+      setError(err?.payload?.error || err?.message || 'Unable to create a new chat.');
+    } finally {
+      setCreatingThread(false);
+    }
+  }
+
+  function handleSelectThread(threadId) {
+    if (threadId === activeThreadId || sending) return;
+    setError('');
+    setRenamingThreadId(null);
+    setActiveThreadId(threadId);
+  }
+
+  function handleStartRename(thread) {
+    setRenamingThreadId(thread.id);
+    setRenameValue(thread.title);
+    setError('');
+  }
+
+  async function handleRenameThread(threadId) {
+    const nextTitle = renameValue.trim();
+    if (!nextTitle) {
+      setError('Chat title cannot be empty.');
+      return;
+    }
+
+    setThreadBusyId(threadId);
+    setError('');
+    try {
+      const updatedThread = await renameThread(threadId, nextTitle);
+      upsertThread(updatedThread);
+      setRenamingThreadId(null);
+      setRenameValue('');
+    } catch (err) {
+      if (err?.status === 401 && typeof onLogout === 'function') {
+        onLogout();
+        return;
+      }
+      setError(err?.payload?.error || err?.message || 'Unable to rename this chat.');
+    } finally {
+      setThreadBusyId(null);
+    }
+  }
+
+  async function handleDeleteThread(thread) {
+    if (!window.confirm(`Delete "${thread.title}"?`)) return;
+
+    setThreadBusyId(thread.id);
+    setError('');
+    try {
+      await deleteThread(thread.id);
+      const remainingThreads = threads.filter(existingThread => existingThread.id !== thread.id);
+
+      if (remainingThreads.length === 0) {
+        const replacementThread = await createThread();
+        setThreads([replacementThread]);
+        setActiveThreadId(replacementThread.id);
+      } else {
+        setThreads(sortThreads(remainingThreads));
+        if (thread.id === activeThreadId) {
+          setActiveThreadId(remainingThreads[0].id);
+        }
+      }
+    } catch (err) {
+      if (err?.status === 401 && typeof onLogout === 'function') {
+        onLogout();
+        return;
+      }
+      setError(err?.payload?.error || err?.message || 'Unable to delete this chat.');
+    } finally {
+      setThreadBusyId(null);
+    }
+  }
 
   async function handleSend() {
     const trimmed = input.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || !activeThreadId) return;
     setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
     setInput('');
     setSending(true);
     setSendPhase('thinking');
     setError('');
     try {
-      const returned = await sendMessage(trimmed);
-      const assistantMessage = returned.find(entry => entry.role === 'assistant');
+      const { thread, messages: returnedMessages } = await sendMessage(activeThreadId, trimmed);
+      const assistantMessage = returnedMessages.find(entry => entry.role === 'assistant');
       const replyText = assistantMessage?.content || '...';
-      setMessages(prev => [...prev, assistantMessage || { role: 'assistant', content: replyText }]);
+      setMessages(prev => [
+        ...prev,
+        assistantMessage || { role: 'assistant', content: replyText }
+      ]);
+      upsertThread(thread);
       if (progressEntries.length < maxProgress) {
         try {
           const newEntry = await recordProgress(
+            activeThreadId,
             `Reflection ${progressEntries.length + 1}`,
             replyText.slice(0, 200)
           );
@@ -114,14 +293,15 @@ function ChatWindow({ user, onLogout }) {
   }
 
   async function handleReset() {
+    if (!activeThreadId) return;
     setError('');
     try {
-      await resetChat();
-      await resetProgress();
+      const updatedThread = await resetChat(activeThreadId);
+      upsertThread(updatedThread);
       setMessages([defaultWelcome]);
       setProgressEntries([]);
     } catch (err) {
-      setError(err?.payload?.error || err?.message || 'Unable to reset progress.');
+      setError(err?.payload?.error || err?.message || 'Unable to reset session.');
     }
   }
 
@@ -257,7 +437,7 @@ function ChatWindow({ user, onLogout }) {
         <header className={`chatgpt-header ${darkMode ? 'dark' : 'light'}`}>
           <div className="chatgpt-title">
             <h1>Meet Mama Akinyi</h1>
-            <p>Your AI learning friend</p>
+            <p>Your guide to learning</p>
           </div>
           <div className="chatgpt-controls">
             <button
@@ -270,7 +450,11 @@ function ChatWindow({ user, onLogout }) {
                 <span className="toggle-label">{darkMode ? '🌙' : '☀️'}</span>
               </div>
             </button>
-            <button className={`ghost-btn ${darkMode ? 'dark' : 'light'}`} onClick={handleReset} disabled={loading || sending}>
+            <button
+              className={`ghost-btn ${darkMode ? 'dark' : 'light'}`}
+              onClick={handleReset}
+              disabled={loadingThreads || loading || sending || !activeThreadId}
+            >
               Reset Session
             </button>
             <button className={`ghost-btn ${darkMode ? 'dark' : 'light'}`} onClick={onLogout} disabled={sending}>
@@ -280,7 +464,7 @@ function ChatWindow({ user, onLogout }) {
               <div className="user-avatar">{initials}</div>
               <div className="user-details">
                 <span className={`user-name ${darkMode ? 'dark' : 'light'}`}>{displayName}</span>
-                <span className="user-status">{loading ? 'Syncing...' : 'Online'}</span>
+                <span className="user-status">{loadingThreads || loading ? 'Syncing...' : 'Online'}</span>
               </div>
             </div>
           </div>
@@ -297,56 +481,88 @@ function ChatWindow({ user, onLogout }) {
 
 
         <div className={`chatgpt-body ${darkMode ? 'dark' : 'light'}`}>
-          <div className="chatgpt-messages">
-            {messages.map((m, idx) => {
-              const isAi = m.role === 'assistant';
-              return (
-                <div key={idx} className={`message-row ${isAi ? 'ai' : 'user'} ${darkMode ? 'dark' : 'light'}`}>
+          <ChatSidebar
+            darkMode={darkMode}
+            threads={threads}
+            activeThreadId={activeThreadId}
+            creatingThread={creatingThread}
+            renamingThreadId={renamingThreadId}
+            renameValue={renameValue}
+            threadBusyId={threadBusyId}
+            onCreateThread={handleCreateThread}
+            onSelectThread={handleSelectThread}
+            onStartRename={handleStartRename}
+            onRenameValueChange={setRenameValue}
+            onRenameSubmit={handleRenameThread}
+            onRenameCancel={() => {
+              setRenamingThreadId(null);
+              setRenameValue('');
+            }}
+            onDeleteThread={handleDeleteThread}
+          />
+
+          <div className="chat-main-panel">
+            <div className="chatgpt-messages">
+              {messages.map((m, idx) => {
+                const isAi = m.role === 'assistant';
+                return (
+                  <div
+                    key={m.id || idx}
+                    className={`message-row ${isAi ? 'ai' : 'user'} ${darkMode ? 'dark' : 'light'}`}
+                  >
+                    <div className="message-avatar">
+                      {isAi ? <img src={logo} alt="Mama Akinyi" className="avatar-logo" /> : initials}
+                    </div>
+                    <div className="message-content">
+                      <div className="message-name">{isAi ? 'Mama Akinyi' : displayName}</div>
+                      <div className="message-text">{m.content}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              {sending && (
+                <div className={`message-row ai ${darkMode ? 'dark' : 'light'}`}>
                   <div className="message-avatar">
-                    {isAi ? <img src={logo} alt="Mama Akinyi" className="avatar-logo" /> : initials}
+                    <img src={logo} alt="Mama Akinyi" className="avatar-logo" />
                   </div>
                   <div className="message-content">
-                    <div className="message-name">{isAi ? 'Mama Akinyi' : displayName}</div>
-                    <div className="message-text">{m.content}</div>
+                    <div className="message-name">Mama Akinyi</div>
+                    <div className="message-text thinking">
+                      <span className="thinking-label">{sendPhase === 'thinking' ? 'Thinking...' : 'Replying...'}</span>
+                      <span className="thinking-dot" />
+                      <span className="thinking-dot" />
+                      <span className="thinking-dot" />
+                    </div>
                   </div>
                 </div>
-              );
-            })}
-            {sending && (
-              <div className={`message-row ai ${darkMode ? 'dark' : 'light'}`}>
-                <div className="message-avatar">
-                  <img src={logo} alt="Mama Akinyi" className="avatar-logo" />
-                </div>
-                <div className="message-content">
-                  <div className="message-name">Mama Akinyi</div>
-                  <div className="message-text thinking">
-                    <span className="thinking-label">{sendPhase === 'thinking' ? 'Thinking...' : 'Replying...'}</span>
-                    <span /><span /><span />
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div className={`chatgpt-input ${darkMode ? 'dark' : 'light'}`}>
-            <div className={`input-bar ${darkMode ? 'dark' : 'light'}`}>
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                placeholder="Send a message..."
-                onKeyDown={handleKeyDown}
-                rows={1}
-                disabled={sending}
-              />
-              <button type="button" aria-label="Send" onClick={handleSend} disabled={sending || !input.trim()}>
-                {sending ? '...' : '➤'}
-              </button>
+              )}
+              <div ref={messagesEndRef} />
             </div>
-            {error && <p className="input-error">{error}</p>}
-            <p className="input-disclaimer">
-              Mama Akinyi may produce inaccurate information about people, places, or facts.
-            </p>
+
+            <div className={`chatgpt-input ${darkMode ? 'dark' : 'light'}`}>
+              <div className={`input-bar ${darkMode ? 'dark' : 'light'}`}>
+                <textarea
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  placeholder={activeThreadId ? 'Send a message...' : 'Create a chat to get started...'}
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                  disabled={sending || !activeThreadId}
+                />
+                <button
+                  type="button"
+                  aria-label="Send"
+                  onClick={handleSend}
+                  disabled={sending || !input.trim() || !activeThreadId}
+                >
+                  {sending ? '...' : '➤'}
+                </button>
+              </div>
+              {error && <p className="input-error">{error}</p>}
+              <p className="input-disclaimer">
+                Mama Akinyi may produce inaccurate information about people, places, or facts.
+              </p>
+            </div>
           </div>
         </div>
       </div>
