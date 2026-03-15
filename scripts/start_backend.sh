@@ -1,6 +1,9 @@
 #!/bin/bash
-cd /Users/priya/Desktop/Lalmba_Capstone_Project/backend
-python3 -m venv .venv
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${PROJECT_ROOT}"
 source .venv/bin/activate
-pip install -r requirements.txt
-python3 server.py
+exec python backend/server.py

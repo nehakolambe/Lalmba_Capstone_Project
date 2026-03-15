@@ -16,7 +16,7 @@ from ..services.conversation_state import (
     load_turns_since_last_summary,
     reset_conversation_state,
 )
-from ..services.ollama_client import OllamaError
+from ..services.llama_cpp_client import LlamaCppError
 from ..services.prompts import MatchedAppContext
 from ..utils import error_response, login_required
 from . import chat_bp
@@ -63,7 +63,7 @@ def chat_message(user):
         turns_to_summarize = load_recent_completed_turns(user.id, SUMMARY_WINDOW_TURNS)
         try:
             summary_text = generate_hidden_summary(turns_to_summarize)
-        except OllamaError as exc:
+        except LlamaCppError as exc:
             logger.exception("Hidden summarization failed for user %s", user.id)
             db.session.rollback()
             return error_response(
@@ -71,6 +71,8 @@ def chat_message(user):
                 503,
                 details={"reason": getattr(exc, "reason", None)},
             )
+
+        logger.info("Generated hidden summary for user %s: %s", user.id, summary_text)
 
         # Keep summary text and counter reset in one write transaction.
         conversation.current_summary = summary_text
@@ -94,7 +96,7 @@ def chat_message(user):
             overlap_turns=overlap_turns,
             recent_turns=recent_turns,
         )
-    except OllamaError as exc:
+    except LlamaCppError as exc:
         logger.exception("Assistant reply generation failed for user %s", user.id)
         db.session.rollback()
         return error_response(

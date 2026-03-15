@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from .ollama_client import OllamaError, generate_response
+from .llama_cpp_client import LlamaCppError, generate_response
 from .prompts import (
     SUMMARY_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
@@ -49,8 +49,8 @@ def generate_assistant_reply(
             timeout=120,  # first call can be slow if model is cold
         )
 
-    except OllamaError as e:
-        logger.exception("Ollama failed: %s (reason=%s status=%s)", e, getattr(e, "reason", None), getattr(e, "status", None))
+    except LlamaCppError as e:
+        logger.exception("llama.cpp failed: %s (reason=%s status=%s)", e, getattr(e, "reason", None), getattr(e, "status", None))
         if not fallback_on_error:
             raise
         return "I’m having trouble reaching the local AI model right now. Please try again in a moment."
@@ -61,6 +61,5 @@ def generate_hidden_summary(turns: list[CompletedTurn]) -> str:
     return generate_response(
         build_summary_prompt(turns),
         system=SUMMARY_SYSTEM_PROMPT,
-        model="llama3.2:3b",
         timeout=120,
     )

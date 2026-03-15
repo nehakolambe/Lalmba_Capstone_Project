@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from backend.models import Conversation
 from backend.services.app_manifest import AppManifestEntry
 from backend.services.app_search import AppMatch
@@ -154,7 +156,7 @@ def test_chat_message_falls_back_when_app_search_fails(client, registered_user_p
 
 
 def test_chat_message_triggers_summary_checkpoint_before_sixth_turn(
-    client, registered_user_payload, monkeypatch
+    client, registered_user_payload, monkeypatch, caplog
 ):
     _register_and_login(client, registered_user_payload)
 
@@ -176,7 +178,8 @@ def test_chat_message_triggers_summary_checkpoint_before_sixth_turn(
 
     monkeypatch.setattr("backend.routes.chat.generate_hidden_summary", _fake_summary)
 
-    response = client.post("/chat/message", json={"text": "Question 6"})
+    with caplog.at_level(logging.INFO, logger="backend.routes.chat"):
+        response = client.post("/chat/message", json={"text": "Question 6"})
     data = response.get_json()
 
     assert response.status_code == 201
@@ -184,6 +187,7 @@ def test_chat_message_triggers_summary_checkpoint_before_sixth_turn(
     assert len(captured["turns"]) == 5
     assert captured["turns"][0].user_text == "Question 1"
     assert captured["turns"][-1].assistant_text == "Reply to: Question 5"
+    assert "Generated hidden summary for user 1: fifty-word summary placeholder" in caplog.text
 
     conversation = Conversation.query.filter_by(user_id=1).first()
     assert conversation.current_summary == "fifty-word summary placeholder"
@@ -191,7 +195,7 @@ def test_chat_message_triggers_summary_checkpoint_before_sixth_turn(
 
 
 def test_chat_message_blocks_when_summary_generation_fails(
-    client, registered_user_payload, monkeypatch
+    client, registered_user_payload, monkeypatch, caplog
 ):
     _register_and_login(client, registered_user_payload)
 
@@ -209,15 +213,17 @@ def test_chat_message_blocks_when_summary_generation_fails(
     assert conversation.turns_since_last_summary == 5
 
     def _raise_summary_error(_turns):
-        from backend.services.ollama_client import OllamaError
+        from backend.services.llama_cpp_client import LlamaCppError
 
-        raise OllamaError("summary failed", reason="boom")
+        raise LlamaCppError("summary failed", reason="boom")
 
     monkeypatch.setattr("backend.routes.chat.generate_hidden_summary", _raise_summary_error)
 
-    response = client.post("/chat/message", json={"text": "Question 6"})
+    with caplog.at_level(logging.INFO, logger="backend.routes.chat"):
+        response = client.post("/chat/message", json={"text": "Question 6"})
     data = response.get_json()
 
     assert response.status_code == 503
     assert "conversation memory" in data["error"]
     assert Conversation.query.filter_by(user_id=1).first().turns_since_last_summary == 5
+    assert "Generated hidden summary for user 1:" not in caplog.text

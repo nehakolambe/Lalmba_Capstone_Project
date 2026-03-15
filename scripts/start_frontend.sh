@@ -1,4 +1,8 @@
 #!/bin/bash
-cd /Users/priya/Desktop/Lalmba_Capstone_Project/matoso-chatbot
-npm install
-npm start
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${PROJECT_ROOT}/matoso-chatbot"
+exec npm start
