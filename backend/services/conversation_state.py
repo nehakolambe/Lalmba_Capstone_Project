@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from flask import current_app, has_app_context
 
 from ..extensions import db
-from ..models import Conversation, Message
+from ..models import ChatThread, Conversation, Message
+
 
 DEFAULT_SUMMARY_WINDOW_TURNS = 5
 DEFAULT_OVERLAP_TURNS = 1
@@ -18,43 +19,43 @@ class CompletedTurn:
     assistant_text: str
 
 
-def get_or_create_conversation_state(user_id: int) -> Conversation:
-    """Return the user's rolling conversation state, creating it if needed."""
-    conversation = Conversation.query.filter_by(user_id=user_id).first()
-    if conversation is None:
-        conversation = Conversation(
-            user_id=user_id,
-            current_summary=None,
-            turns_since_last_summary=0,
-            question_count=0,
-            pending_app_choice=False,
-            pending_app_id=None,
-            pending_app_question=None,
-            last_suggested_app_id=None,
-            last_app_topic_hint=None,
+def get_or_create_conversation_state(user_id: int, thread_id: int | None = None) -> ChatThread:
+    """Return the thread's rolling conversation state, creating a thread if needed."""
+    thread = None
+    if thread_id is not None:
+        thread = ChatThread.query.filter_by(id=thread_id, user_id=user_id).first()
+    if thread is None:
+        thread = (
+            ChatThread.query.filter_by(user_id=user_id)
+            .order_by(ChatThread.updated_at.desc(), ChatThread.id.desc())
+            .first()
         )
-        db.session.add(conversation)
+    if thread is None:
+        thread = ChatThread(user_id=user_id, title="New chat")
+        db.session.add(thread)
         db.session.flush()
-    return conversation
+    return thread
 
 
-def load_recent_completed_turns(user_id: int, limit: int) -> list[CompletedTurn]:
+def load_recent_completed_turns(user_id: int, thread_id: int, limit: int) -> list[CompletedTurn]:
     """Return the most recent fully completed user-assistant turns."""
     if limit <= 0:
         return []
-    turns = _load_completed_turns(user_id)
+    turns = _load_completed_turns(user_id, thread_id)
     return turns[-limit:]
 
 
 def load_turns_since_last_summary(
     user_id: int,
+    thread_id: int,
     *,
     overlap_turns: int = DEFAULT_OVERLAP_TURNS,
-    conversation: Conversation | None = None,
+    conversation: ChatThread | None = None,
 ) -> tuple[list[CompletedTurn], list[CompletedTurn]]:
     """Return overlap turns from the summary boundary and all newer turns."""
-    state = conversation or get_or_create_conversation_state(user_id)
-    turns = _load_completed_turns(user_id)
+    state = conversation or get_or_create_conversation_state(user_id, thread_id)
+    turns = _load_completed_turns(user_id, thread_id)
+
     if not state.current_summary:
         return [], turns
 
@@ -65,19 +66,22 @@ def load_turns_since_last_summary(
     return turns[overlap_start:summary_window_end], turns[summary_window_end:]
 
 
-def reset_conversation_state(user_id: int) -> None:
-    """Delete the user's rolling conversation state for a clean reset."""
+def reset_conversation_state(user_id: int, thread_id: int | None = None) -> None:
+    """Clear the thread's rolling summary state and remove legacy single-thread state."""
+    thread = get_or_create_conversation_state(user_id, thread_id)
+    thread.current_summary = None
+    thread.turns_since_last_summary = 0
     Conversation.query.filter_by(user_id=user_id).delete()
 
 
-def clear_pending_app_choice(conversation: Conversation) -> None:
+def clear_pending_app_choice(conversation: ChatThread) -> None:
     conversation.pending_app_choice = False
     conversation.pending_app_id = None
     conversation.pending_app_question = None
 
 
 def set_pending_app_choice(
-    conversation: Conversation,
+    conversation: ChatThread,
     *,
     app_id: str,
     question_text: str,
@@ -87,7 +91,7 @@ def set_pending_app_choice(
     conversation.pending_app_question = question_text
 
 
-def build_session_metadata(conversation: Conversation) -> dict[str, int | bool | str | None]:
+def build_session_metadata(conversation: ChatThread) -> dict[str, int | bool | str | None]:
     question_limit = _question_limit()
     questions_used = max(0, conversation.question_count)
     questions_remaining = max(0, question_limit - questions_used)
@@ -99,7 +103,7 @@ def build_session_metadata(conversation: Conversation) -> dict[str, int | bool |
     }
 
 
-def should_refresh_summary(conversation: Conversation) -> bool:
+def should_refresh_summary(conversation: ChatThread) -> bool:
     return max(0, conversation.turns_since_last_summary) >= _summary_window_turns()
 
 
@@ -127,9 +131,9 @@ def _question_limit() -> int:
     return max(1, int(current_app.config.get("CHAT_QUESTION_LIMIT", DEFAULT_QUESTION_LIMIT)))
 
 
-def _load_completed_turns(user_id: int) -> list[CompletedTurn]:
+def _load_completed_turns(user_id: int, thread_id: int) -> list[CompletedTurn]:
     messages = (
-        Message.query.filter_by(user_id=user_id)
+        Message.query.filter_by(user_id=user_id, thread_id=thread_id)
         .order_by(Message.created_at.asc(), Message.id.asc())
         .all()
     )

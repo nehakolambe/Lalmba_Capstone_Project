@@ -93,7 +93,7 @@ def generate_assistant_reply(
         logger.info("Full user prompt:\n%s", user_prompt)
 
     try:
-        return generate_response(
+        reply = generate_response(
             user_prompt,
             system=SYSTEM_PROMPT,
             timeout=120,
@@ -108,6 +108,7 @@ def generate_assistant_reply(
         if not fallback_on_error:
             raise
         return "I’m having trouble reaching the local AI model right now. Please try again in a moment."
+
 
 
 SUMMARY_SYSTEM_PROMPT = """You create short internal tutoring summaries for memory.
@@ -172,3 +173,4 @@ def _fallback_summary(previous_summary: str, recent_turns: list[CompletedTurn]) 
     for turn in recent_turns[-3:]:
         snippets.append(f"User asked about {turn.user_text}. Assistant taught: {turn.assistant_text}")
     return " ".join(snippets).strip()[:1200]
+
