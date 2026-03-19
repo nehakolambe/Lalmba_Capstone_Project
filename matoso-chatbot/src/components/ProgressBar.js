@@ -1,6 +1,6 @@
 import React from 'react';
 
-function ProgressBar({ value, max, darkMode = false }) {
+function ProgressBar({ value, max, darkMode = false, label = 'Session progress' }) {
   const percent = Math.round((value / max) * 100);
 
   return (
@@ -10,7 +10,7 @@ function ProgressBar({ value, max, darkMode = false }) {
         fontSize: '13px',
         color: darkMode ? '#9a9ba7' : '#666'
       }}>
-        Session progress {value}/{max}
+        {label} {value}/{max}
       </label>
 
   

@@ -57,13 +57,11 @@ export async function registerUser({ fullName, username, pin, details }) {
 }
 
 export async function fetchHistory(limit = 50) {
-  const data = await request(`/chat/history?limit=${limit}`);
-  return data.history || [];
+  return await request(`/chat/history?limit=${limit}`);
 }
 
 export async function sendMessage(text) {
-  const data = await request('/chat/message', { method: 'POST', body: { text } });
-  return data.messages || [];
+  return await request('/chat/message', { method: 'POST', body: { text } });
 }
 
 export async function resetChat() {

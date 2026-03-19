@@ -1,19 +1,16 @@
 #!/bin/bash
+set -euo pipefail
 
-# Start Ollama
-open -a Terminal "$(pwd)/scripts/start_ollama.sh"
-sleep 5
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Start Llama2
-open -a Terminal "$(pwd)/start_llama2.sh"
-sleep 5
+mkdir -p /tmp/lalmba-capstone-logs
 
-# Start Backend
-open -a Terminal "$(pwd)/scripts/start_backend.sh"
-sleep 5
+nohup "${SCRIPT_DIR}/scripts/start_llama_cpp.sh" >/tmp/lalmba-capstone-logs/llama_cpp.log 2>&1 &
+nohup "${SCRIPT_DIR}/scripts/start_backend.sh" >/tmp/lalmba-capstone-logs/backend.log 2>&1 &
+nohup "${SCRIPT_DIR}/scripts/start_frontend.sh" >/tmp/lalmba-capstone-logs/frontend.log 2>&1 &
 
-# Start Frontend
-open -a Terminal "$(pwd)/scripts/start_frontend.sh"
-sleep 5
-
-echo "All services starting in separate terminals..."
+echo "Started llama.cpp, backend, and frontend in the background."
+echo "Logs:"
+echo "  /tmp/lalmba-capstone-logs/llama_cpp.log"
+echo "  /tmp/lalmba-capstone-logs/backend.log"
+echo "  /tmp/lalmba-capstone-logs/frontend.log"

@@ -8,7 +8,7 @@ test('renders login form heading after session check', async () => {
   api.fetchSession.mockResolvedValue(null);
   render(<App />);
   const heading = await screen.findByRole('heading', {
-    name: /welcome to matoso help desk/i
+    name: /welcome to matoso smart space/i
   });
   expect(heading).toBeInTheDocument();
 });

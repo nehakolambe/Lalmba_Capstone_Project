@@ -11,6 +11,7 @@ from .db_schema import ensure_schema
 from .extensions import db
 from .routes import auth_bp, chat_bp, progress_bp
 from .services.app_search import initialize_app_search
+from .services.chat_memory import initialize_chat_memory
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -54,6 +55,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
     if app.config.get("APP_SEARCH_ENABLED", True):
         initialize_app_search(app)
+    initialize_chat_memory(app)
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)

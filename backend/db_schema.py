@@ -53,6 +53,16 @@ def ensure_schema() -> None:
         _ensure_column("conversations", "user_id", "INTEGER")
         _ensure_column("conversations", "current_summary", "TEXT")
         _ensure_column("conversations", "turns_since_last_summary", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column("conversations", "question_count", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(
+            "conversations",
+            "pending_app_choice",
+            "BOOLEAN NOT NULL DEFAULT 0",
+        )
+        _ensure_column("conversations", "pending_app_id", "TEXT")
+        _ensure_column("conversations", "pending_app_question", "TEXT")
+        _ensure_column("conversations", "last_suggested_app_id", "TEXT")
+        _ensure_column("conversations", "last_app_topic_hint", "TEXT")
 
     if inspector.has_table("conversations"):
         indexes = {idx["name"] for idx in inspector.get_indexes("conversations")}

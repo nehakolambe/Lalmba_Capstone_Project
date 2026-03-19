@@ -86,6 +86,12 @@ class Conversation(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True)
     current_summary = db.Column(db.Text, nullable=True)
     turns_since_last_summary = db.Column(db.Integer, nullable=False, default=0)
+    question_count = db.Column(db.Integer, nullable=False, default=0)
+    pending_app_choice = db.Column(db.Boolean, nullable=False, default=False)
+    pending_app_id = db.Column(db.String(255), nullable=True)
+    pending_app_question = db.Column(db.Text, nullable=True)
+    last_suggested_app_id = db.Column(db.String(255), nullable=True)
+    last_app_topic_hint = db.Column(db.String(255), nullable=True)
 
     __table_args__ = (db.Index("ix_conversations_user_id", "user_id", unique=True),)
 
@@ -97,6 +103,12 @@ class Conversation(db.Model):
             "user_id": self.user_id,
             "current_summary": self.current_summary,
             "turns_since_last_summary": self.turns_since_last_summary,
+            "question_count": self.question_count,
+            "pending_app_choice": self.pending_app_choice,
+            "pending_app_id": self.pending_app_id,
+            "pending_app_question": self.pending_app_question,
+            "last_suggested_app_id": self.last_suggested_app_id,
+            "last_app_topic_hint": self.last_app_topic_hint,
         }
 
 

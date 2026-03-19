@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ProgressBar from './ProgressBar';
-import { fetchHistory, fetchProgress, recordProgress, resetChat, resetProgress, sendMessage } from '../api';
+import { fetchHistory, resetChat, sendMessage } from '../api';
 import logo from '../assets/logo.png';
 
 function ChatWindow({ user, onLogout }) {
@@ -17,19 +17,22 @@ function ChatWindow({ user, onLogout }) {
 
   const [messages, setMessages]               = useState([defaultWelcome]);
   const [input, setInput]                     = useState('');
-  const [progressEntries, setProgressEntries] = useState([]);
   const [loading, setLoading]                 = useState(true);
   const [sending, setSending]                 = useState(false);
   const [sendPhase, setSendPhase]             = useState('');
   const [error, setError]                     = useState('');
+  const [session, setSession]                 = useState({
+    question_count: 0,
+    question_limit: 10,
+    questions_remaining: 10,
+    limit_reached: false
+  });
   const [darkMode, setDarkMode]               = useState(() => {
     return localStorage.getItem('darkMode') === 'true';
   });
 
   const isMountedRef   = useRef(true);
   const messagesEndRef = useRef(null);
-  const maxProgress    = 10;
-
   useEffect(() => {
     if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -50,13 +53,13 @@ function ChatWindow({ user, onLogout }) {
       setLoading(true);
       setError('');
       try {
-        const [history, progress] = await Promise.all([fetchHistory(), fetchProgress()]);
+        const historyResponse = await fetchHistory();
         if (!mounted) return;
-        const parsedHistory = history
+        const parsedHistory = (historyResponse.history || [])
           .map(entry => ({ role: entry.role, content: entry.content, createdAt: entry.created_at }))
           .filter(item => item.content && item.content.trim().length > 0);
         setMessages(parsedHistory.length ? parsedHistory : [defaultWelcome]);
-        setProgressEntries(progress.slice(0, maxProgress));
+        setSession(prev => ({ ...prev, ...(historyResponse.session || {}) }));
       } catch (err) {
         if (!mounted) return;
         if (err?.status === 401 && typeof onLogout === 'function') { onLogout(); return; }
@@ -73,28 +76,22 @@ function ChatWindow({ user, onLogout }) {
   async function handleSend() {
     const trimmed = input.trim();
     if (!trimmed || sending) return;
+    if (session.limit_reached) {
+      setError('You have reached the question limit for this chat. Reset the session to continue.');
+      return;
+    }
     setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
     setInput('');
     setSending(true);
     setSendPhase('thinking');
     setError('');
     try {
-      const returned = await sendMessage(trimmed);
-      const assistantMessage = returned.find(entry => entry.role === 'assistant');
+      const response = await sendMessage(trimmed);
+      const returnedMessages = response.messages || [];
+      const assistantMessage = returnedMessages.find(entry => entry.role === 'assistant');
       const replyText = assistantMessage?.content || '...';
       setMessages(prev => [...prev, assistantMessage || { role: 'assistant', content: replyText }]);
-      if (progressEntries.length < maxProgress) {
-        try {
-          const newEntry = await recordProgress(
-            `Reflection ${progressEntries.length + 1}`,
-            replyText.slice(0, 200)
-          );
-          setProgressEntries(prev => {
-            if (prev.length >= maxProgress) return prev;
-            return [...prev, newEntry];
-          });
-        } catch (e) { console.warn('Progress error:', e); }
-      }
+      setSession(prev => ({ ...prev, ...(response.session || {}) }));
     } catch (err) {
       const isAuthError = err?.status === 401;
       const fallback = isAuthError
@@ -117,11 +114,15 @@ function ChatWindow({ user, onLogout }) {
     setError('');
     try {
       await resetChat();
-      await resetProgress();
       setMessages([defaultWelcome]);
-      setProgressEntries([]);
+      setSession({
+        question_count: 0,
+        question_limit: 10,
+        questions_remaining: 10,
+        limit_reached: false
+      });
     } catch (err) {
-      setError(err?.payload?.error || err?.message || 'Unable to reset progress.');
+      setError(err?.payload?.error || err?.message || 'Unable to reset session.');
     }
   }
 
@@ -289,9 +290,10 @@ function ChatWindow({ user, onLogout }) {
         {/* ── Progress Bar ── */}
         <div className="chatgpt-progress">
           <ProgressBar
-            value={Math.min(progressEntries.length, maxProgress)}
-            max={maxProgress}
+            value={Math.min(session.question_count || 0, session.question_limit || 10)}
+            max={session.question_limit || 10}
             darkMode={darkMode}
+            label="Questions used"
           />
         </div>
 
@@ -337,13 +339,21 @@ function ChatWindow({ user, onLogout }) {
                 placeholder="Send a message..."
                 onKeyDown={handleKeyDown}
                 rows={1}
-                disabled={sending}
+                disabled={sending || session.limit_reached}
               />
-              <button type="button" aria-label="Send" onClick={handleSend} disabled={sending || !input.trim()}>
+              <button
+                type="button"
+                aria-label="Send"
+                onClick={handleSend}
+                disabled={sending || !input.trim() || session.limit_reached}
+              >
                 {sending ? '...' : '➤'}
               </button>
             </div>
             {error && <p className="input-error">{error}</p>}
+            <p className="input-disclaimer">
+              {session.questions_remaining} question{session.questions_remaining === 1 ? '' : 's'} left in this chat.
+            </p>
             <p className="input-disclaimer">
               Mama Akinyi may produce inaccurate information about people, places, or facts.
             </p>
