@@ -23,7 +23,7 @@ test('shows register validation errors returned from handler', async () => {
 
   render(<Login onLogin={jest.fn()} onRegister={onRegister} />);
 
-  fireEvent.click(screen.getByRole('button', { name: /create one here/i }));
+  fireEvent.click(screen.getByRole('button', { name: /sign up/i }));
   fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: '' } });
   fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'alice' } });
   fireEvent.change(screen.getByLabelText(/choose a pin\/password/i), {

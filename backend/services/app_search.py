@@ -3,30 +3,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
 
 import numpy as np
 from flask import Flask
 
 from .app_manifest import AppManifestEntry, load_app_manifest
+from .embeddings import EmbeddingModel, encode_sentences, load_embedding_model
 
 logger = logging.getLogger(__name__)
-
-try:
-    from sentence_transformers import SentenceTransformer
-except ImportError:  # pragma: no cover
-    SentenceTransformer = None
-
-
-class EmbeddingModel(Protocol):
-    def encode(
-        self,
-        sentences: str | list[str],
-        *,
-        convert_to_numpy: bool = True,
-        normalize_embeddings: bool = True,
-    ) -> Any:
-        ...
 
 
 @dataclass(frozen=True)
@@ -57,7 +41,7 @@ class AppSearchIndex:
         if not cleaned_query or self.is_empty:
             return None
 
-        query_embedding = _encode_sentences(model, cleaned_query)
+        query_embedding = encode_sentences(model, cleaned_query)
         scores = self.embeddings @ query_embedding
         best_index = int(np.argmax(scores))
         best_score = float(scores[best_index])
@@ -91,6 +75,17 @@ def get_app_search_index(app: Flask) -> AppSearchIndex | None:
     return app.extensions.get("app_search_index")
 
 
+def get_app_by_id(app: Flask, app_id: str) -> AppManifestEntry | None:
+    """Return a manifest entry by id from the initialized search index."""
+    index = get_app_search_index(app)
+    if index is None or not app_id:
+        return None
+    for entry in index.entries:
+        if entry.app_id == app_id:
+            return entry
+    return None
+
+
 def search_apps(
     app: Flask,
     query: str,
@@ -114,18 +109,6 @@ def search_apps(
             app.config["APP_MATCH_THRESHOLD"] if threshold is None else threshold
         ),
     )
-
-
-def load_embedding_model(model_name: str) -> EmbeddingModel:
-    """Load the configured sentence-transformer model."""
-    if SentenceTransformer is None:
-        raise RuntimeError(
-            "sentence-transformers is required for app search. "
-            "Install backend dependencies before starting the server."
-        )
-    return SentenceTransformer(model_name)
-
-
 def build_app_index(
     entries: list[AppManifestEntry],
     model: EmbeddingModel | None,
@@ -143,22 +126,6 @@ def build_app_index(
     descriptions = [entry.description for entry in entries]
     if model is None:
         raise RuntimeError("Embedding model is required to build a non-empty app index")
-    embeddings = _encode_sentences(model, descriptions)
+    embeddings = encode_sentences(model, descriptions)
 
-    return AppSearchIndex(
-        entries=tuple(entries),
-        embeddings=embeddings,
-        model_name=model_name,
-    )
-
-
-def _encode_sentences(
-    model: EmbeddingModel,
-    sentences: str | list[str],
-) -> np.ndarray:
-    encoded = model.encode(
-        sentences,
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )
-    return np.asarray(encoded, dtype=np.float32)
+    return AppSearchIndex(entries=tuple(entries), embeddings=embeddings, model_name=model_name)
