@@ -94,6 +94,12 @@ class ChatThread(db.Model):
     title = db.Column(db.String(255), nullable=False, default="New chat")
     current_summary = db.Column(db.Text, nullable=True)
     turns_since_last_summary = db.Column(db.Integer, nullable=False, default=0)
+    question_count = db.Column(db.Integer, nullable=False, default=0)
+    pending_app_choice = db.Column(db.Boolean, nullable=False, default=False)
+    pending_app_id = db.Column(db.String(255), nullable=True)
+    pending_app_question = db.Column(db.Text, nullable=True)
+    last_suggested_app_id = db.Column(db.String(255), nullable=True)
+    last_app_topic_hint = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime,
@@ -122,6 +128,12 @@ class ChatThread(db.Model):
             "title": self.title,
             "current_summary": self.current_summary,
             "turns_since_last_summary": self.turns_since_last_summary,
+            "question_count": self.question_count,
+            "pending_app_choice": self.pending_app_choice,
+            "pending_app_id": self.pending_app_id,
+            "pending_app_question": self.pending_app_question,
+            "last_suggested_app_id": self.last_suggested_app_id,
+            "last_app_topic_hint": self.last_app_topic_hint,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }

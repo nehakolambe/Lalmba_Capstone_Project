@@ -60,6 +60,12 @@ def ensure_schema() -> None:
         _ensure_column("chat_threads", "title", "TEXT")
         _ensure_column("chat_threads", "current_summary", "TEXT")
         _ensure_column("chat_threads", "turns_since_last_summary", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column("chat_threads", "question_count", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column("chat_threads", "pending_app_choice", "BOOLEAN NOT NULL DEFAULT 0")
+        _ensure_column("chat_threads", "pending_app_id", "TEXT")
+        _ensure_column("chat_threads", "pending_app_question", "TEXT")
+        _ensure_column("chat_threads", "last_suggested_app_id", "TEXT")
+        _ensure_column("chat_threads", "last_app_topic_hint", "TEXT")
         _ensure_column("chat_threads", "created_at", "DATETIME")
         _ensure_column("chat_threads", "updated_at", "DATETIME")
 
