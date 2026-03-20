@@ -98,6 +98,7 @@ def generate_assistant_reply(
             system=SYSTEM_PROMPT,
             timeout=120,
         )
+        return reply
     except LlamaCppError as e:
         logger.exception(
             "llama.cpp failed: %s (reason=%s status=%s)",
@@ -173,4 +174,3 @@ def _fallback_summary(previous_summary: str, recent_turns: list[CompletedTurn]) 
     for turn in recent_turns[-3:]:
         snippets.append(f"User asked about {turn.user_text}. Assistant taught: {turn.assistant_text}")
     return " ".join(snippets).strip()[:1200]
-
