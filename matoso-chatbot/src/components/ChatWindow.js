@@ -1,7 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ChatSidebar from './ChatSidebar';
 import ProgressBar from './ProgressBar';
-import { fetchHistory, resetChat, sendMessage } from '../api';
+import {
+  createThread,
+  deleteThread,
+  fetchHistory,
+  fetchThreads,
+  renameThread,
+  resetChat,
+  sendMessage
+} from '../api';
 import logo from '../assets/logo.png';
+
+function sortThreads(list) {
+  return [...list].sort((left, right) => {
+    const leftTime = Date.parse(left.updated_at || left.created_at || 0);
+    const rightTime = Date.parse(right.updated_at || right.created_at || 0);
+    return rightTime - leftTime;
+  });
+}
 
 function ChatWindow({ user, onLogout }) {
   const displayName = useMemo(() => (user?.username || 'Guest').trim() || 'Guest', [user]);
@@ -16,9 +33,16 @@ function ChatWindow({ user, onLogout }) {
   );
 
   const [messages, setMessages]               = useState([defaultWelcome]);
+  const [threads, setThreads]                 = useState([]);
+  const [activeThreadId, setActiveThreadId]   = useState(null);
   const [input, setInput]                     = useState('');
+  const [loadingThreads, setLoadingThreads]   = useState(true);
   const [loading, setLoading]                 = useState(true);
   const [sending, setSending]                 = useState(false);
+  const [creatingThread, setCreatingThread]   = useState(false);
+  const [threadBusyId, setThreadBusyId]       = useState(null);
+  const [renamingThreadId, setRenamingThreadId] = useState(null);
+  const [renameValue, setRenameValue]         = useState('');
   const [sendPhase, setSendPhase]             = useState('');
   const [error, setError]                     = useState('');
   const [session, setSession]                 = useState({
@@ -31,7 +55,6 @@ function ChatWindow({ user, onLogout }) {
     return localStorage.getItem('darkMode') === 'true';
   });
 
-  const isMountedRef   = useRef(true);
   const messagesEndRef = useRef(null);
   useEffect(() => {
     if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
@@ -40,42 +63,193 @@ function ChatWindow({ user, onLogout }) {
   }, [messages, sending]);
 
   useEffect(() => {
-    return () => { isMountedRef.current = false; };
-  }, []);
-
-  useEffect(() => {
     localStorage.setItem('darkMode', darkMode);
   }, [darkMode]);
 
   useEffect(() => {
     let mounted = true;
-    async function loadData() {
+    async function loadThreadsForUser() {
+      setLoadingThreads(true);
+      setError('');
+      try {
+        const loadedThreads = sortThreads(await fetchThreads());
+        if (!mounted) return;
+        setThreads(loadedThreads);
+        setActiveThreadId(prevActiveId => {
+          if (prevActiveId && loadedThreads.some(thread => thread.id === prevActiveId)) {
+            return prevActiveId;
+          }
+          return loadedThreads[0]?.id ?? null;
+        });
+      } catch (err) {
+        if (!mounted) return;
+        if (err?.status === 401 && typeof onLogout === 'function') {
+          onLogout();
+          return;
+        }
+        setThreads([]);
+        setActiveThreadId(null);
+        setMessages([defaultWelcome]);
+        setError('Unable to load your chats right now. Please try again.');
+      } finally {
+        if (mounted) setLoadingThreads(false);
+      }
+    }
+    loadThreadsForUser();
+    return () => { mounted = false; };
+  }, [defaultWelcome, onLogout, user?.id]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!activeThreadId) {
+      setLoading(false);
+      setMessages([defaultWelcome]);
+      setSession({
+        question_count: 0,
+        question_limit: 10,
+        questions_remaining: 10,
+        limit_reached: false
+      });
+      return () => { mounted = false; };
+    }
+
+    async function loadThreadData() {
       setLoading(true);
       setError('');
       try {
-        const historyResponse = await fetchHistory();
+        const historyResponse = await fetchHistory(activeThreadId);
         if (!mounted) return;
         const parsedHistory = (historyResponse.history || [])
-          .map(entry => ({ role: entry.role, content: entry.content, createdAt: entry.created_at }))
+          .map(entry => ({
+            id: entry.id,
+            role: entry.role,
+            content: entry.content,
+            createdAt: entry.created_at
+          }))
           .filter(item => item.content && item.content.trim().length > 0);
         setMessages(parsedHistory.length ? parsedHistory : [defaultWelcome]);
         setSession(prev => ({ ...prev, ...(historyResponse.session || {}) }));
       } catch (err) {
         if (!mounted) return;
-        if (err?.status === 401 && typeof onLogout === 'function') { onLogout(); return; }
+        if (err?.status === 401 && typeof onLogout === 'function') {
+          onLogout();
+          return;
+        }
         setMessages([defaultWelcome]);
-        setError('Unable to load your previous chat. You can still start a new conversation.');
+        setError('Unable to load this chat. You can still start a new conversation.');
       } finally {
         if (mounted) setLoading(false);
       }
     }
-    loadData();
+
+    loadThreadData();
     return () => { mounted = false; };
-  }, [defaultWelcome, onLogout, user?.id]);
+  }, [activeThreadId, defaultWelcome, onLogout]);
+
+  function upsertThread(thread) {
+    if (!thread) return;
+    setThreads(prevThreads => sortThreads([
+      thread,
+      ...prevThreads.filter(existingThread => existingThread.id !== thread.id)
+    ]));
+  }
+
+  async function handleCreateThread() {
+    if (creatingThread) return;
+    setCreatingThread(true);
+    setError('');
+    setRenamingThreadId(null);
+    try {
+      const thread = await createThread();
+      upsertThread(thread);
+      setActiveThreadId(thread.id);
+      setMessages([defaultWelcome]);
+      setInput('');
+    } catch (err) {
+      if (err?.status === 401 && typeof onLogout === 'function') {
+        onLogout();
+        return;
+      }
+      setError(err?.payload?.error || err?.message || 'Unable to create a new chat.');
+    } finally {
+      setCreatingThread(false);
+    }
+  }
+
+  function handleSelectThread(threadId) {
+    if (threadId === activeThreadId || sending) return;
+    setError('');
+    setRenamingThreadId(null);
+    setActiveThreadId(threadId);
+  }
+
+  function handleStartRename(thread) {
+    setRenamingThreadId(thread.id);
+    setRenameValue(thread.title);
+    setError('');
+  }
+
+  async function handleRenameThread(threadId) {
+    const nextTitle = renameValue.trim();
+    if (!nextTitle) {
+      setError('Chat title cannot be empty.');
+      return;
+    }
+
+    setThreadBusyId(threadId);
+    setError('');
+    try {
+      const updatedThread = await renameThread(threadId, nextTitle);
+      upsertThread(updatedThread);
+      setRenamingThreadId(null);
+      setRenameValue('');
+    } catch (err) {
+      if (err?.status === 401 && typeof onLogout === 'function') {
+        onLogout();
+        return;
+      }
+      setError(err?.payload?.error || err?.message || 'Unable to rename this chat.');
+    } finally {
+      setThreadBusyId(null);
+    }
+  }
+
+  async function handleDeleteThread(thread) {
+    if (!window.confirm(`Delete "${thread.title}"?`)) return;
+
+    setThreadBusyId(thread.id);
+    setError('');
+    try {
+      await deleteThread(thread.id);
+      const remainingThreads = threads.filter(existingThread => existingThread.id !== thread.id);
+
+      if (remainingThreads.length === 0) {
+        const replacementThread = await createThread();
+        setThreads([replacementThread]);
+        setActiveThreadId(replacementThread.id);
+      } else {
+        setThreads(sortThreads(remainingThreads));
+        if (thread.id === activeThreadId) {
+          setActiveThreadId(remainingThreads[0].id);
+        }
+      }
+      setRenamingThreadId(null);
+      setRenameValue('');
+    } catch (err) {
+      if (err?.status === 401 && typeof onLogout === 'function') {
+        onLogout();
+        return;
+      }
+      setError(err?.payload?.error || err?.message || 'Unable to delete this chat.');
+    } finally {
+      setThreadBusyId(null);
+    }
+  }
 
   async function handleSend() {
     const trimmed = input.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || !activeThreadId) return;
     if (session.limit_reached) {
       setError('You have reached the question limit for this chat. Reset the session to continue.');
       return;
@@ -86,12 +260,13 @@ function ChatWindow({ user, onLogout }) {
     setSendPhase('thinking');
     setError('');
     try {
-      const response = await sendMessage(trimmed);
+      const response = await sendMessage(activeThreadId, trimmed);
       const returnedMessages = response.messages || [];
       const assistantMessage = returnedMessages.find(entry => entry.role === 'assistant');
       const replyText = assistantMessage?.content || '...';
       setMessages(prev => [...prev, assistantMessage || { role: 'assistant', content: replyText }]);
       setSession(prev => ({ ...prev, ...(response.session || {}) }));
+      upsertThread(response.thread);
     } catch (err) {
       const isAuthError = err?.status === 401;
       const fallback = isAuthError
@@ -111,9 +286,11 @@ function ChatWindow({ user, onLogout }) {
   }
 
   async function handleReset() {
+    if (!activeThreadId) return;
     setError('');
     try {
-      await resetChat();
+      const response = await resetChat(activeThreadId);
+      upsertThread(response.thread);
       setMessages([defaultWelcome]);
       setSession({
         question_count: 0,
@@ -271,7 +448,11 @@ function ChatWindow({ user, onLogout }) {
                 <span className="toggle-label">{darkMode ? '🌙' : '☀️'}</span>
               </div>
             </button>
-            <button className={`ghost-btn ${darkMode ? 'dark' : 'light'}`} onClick={handleReset} disabled={loading || sending}>
+            <button
+              className={`ghost-btn ${darkMode ? 'dark' : 'light'}`}
+              onClick={handleReset}
+              disabled={loadingThreads || loading || sending || !activeThreadId}
+            >
               Reset Session
             </button>
             <button className={`ghost-btn ${darkMode ? 'dark' : 'light'}`} onClick={onLogout} disabled={sending}>
@@ -281,7 +462,7 @@ function ChatWindow({ user, onLogout }) {
               <div className="user-avatar">{initials}</div>
               <div className="user-details">
                 <span className={`user-name ${darkMode ? 'dark' : 'light'}`}>{displayName}</span>
-                <span className="user-status">{loading ? 'Syncing...' : 'Online'}</span>
+                <span className="user-status">{loadingThreads || loading ? 'Syncing...' : 'Online'}</span>
               </div>
             </div>
           </div>
@@ -299,64 +480,89 @@ function ChatWindow({ user, onLogout }) {
 
 
         <div className={`chatgpt-body ${darkMode ? 'dark' : 'light'}`}>
-          <div className="chatgpt-messages">
-            {messages.map((m, idx) => {
-              const isAi = m.role === 'assistant';
-              return (
-                <div key={idx} className={`message-row ${isAi ? 'ai' : 'user'} ${darkMode ? 'dark' : 'light'}`}>
+          <ChatSidebar
+            darkMode={darkMode}
+            threads={threads}
+            activeThreadId={activeThreadId}
+            creatingThread={creatingThread}
+            renamingThreadId={renamingThreadId}
+            renameValue={renameValue}
+            threadBusyId={threadBusyId}
+            onCreateThread={handleCreateThread}
+            onSelectThread={handleSelectThread}
+            onStartRename={handleStartRename}
+            onRenameValueChange={setRenameValue}
+            onRenameSubmit={handleRenameThread}
+            onRenameCancel={() => {
+              setRenamingThreadId(null);
+              setRenameValue('');
+            }}
+            onDeleteThread={handleDeleteThread}
+          />
+
+          <div className="chat-main-panel">
+            <div className="chatgpt-messages">
+              {messages.map((m, idx) => {
+                const isAi = m.role === 'assistant';
+                return (
+                  <div
+                    key={m.id || idx}
+                    className={`message-row ${isAi ? 'ai' : 'user'} ${darkMode ? 'dark' : 'light'}`}
+                  >
+                    <div className="message-avatar">
+                      {isAi ? <img src={logo} alt="Mama Akinyi" className="avatar-logo" /> : initials}
+                    </div>
+                    <div className="message-content">
+                      <div className="message-name">{isAi ? 'Mama Akinyi' : displayName}</div>
+                      <div className="message-text">{m.content}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              {sending && (
+                <div className={`message-row ai ${darkMode ? 'dark' : 'light'}`}>
                   <div className="message-avatar">
-                    {isAi ? <img src={logo} alt="Mama Akinyi" className="avatar-logo" /> : initials}
+                    <img src={logo} alt="Mama Akinyi" className="avatar-logo" />
                   </div>
                   <div className="message-content">
-                    <div className="message-name">{isAi ? 'Mama Akinyi' : displayName}</div>
-                    <div className="message-text">{m.content}</div>
+                    <div className="message-name">Mama Akinyi</div>
+                    <div className="message-text thinking">
+                      <span className="thinking-label">{sendPhase === 'thinking' ? 'Thinking...' : 'Replying...'}</span>
+                      <span /><span /><span />
+                    </div>
                   </div>
                 </div>
-              );
-            })}
-            {sending && (
-              <div className={`message-row ai ${darkMode ? 'dark' : 'light'}`}>
-                <div className="message-avatar">
-                  <img src={logo} alt="Mama Akinyi" className="avatar-logo" />
-                </div>
-                <div className="message-content">
-                  <div className="message-name">Mama Akinyi</div>
-                  <div className="message-text thinking">
-                    <span className="thinking-label">{sendPhase === 'thinking' ? 'Thinking...' : 'Replying...'}</span>
-                    <span /><span /><span />
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div className={`chatgpt-input ${darkMode ? 'dark' : 'light'}`}>
-            <div className={`input-bar ${darkMode ? 'dark' : 'light'}`}>
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                placeholder="Send a message..."
-                onKeyDown={handleKeyDown}
-                rows={1}
-                disabled={sending || session.limit_reached}
-              />
-              <button
-                type="button"
-                aria-label="Send"
-                onClick={handleSend}
-                disabled={sending || !input.trim() || session.limit_reached}
-              >
-                {sending ? '...' : '➤'}
-              </button>
+              )}
+              <div ref={messagesEndRef} />
             </div>
-            {error && <p className="input-error">{error}</p>}
-            <p className="input-disclaimer">
-              {session.questions_remaining} question{session.questions_remaining === 1 ? '' : 's'} left in this chat.
-            </p>
-            <p className="input-disclaimer">
-              Mama Akinyi may produce inaccurate information about people, places, or facts.
-            </p>
+
+            <div className={`chatgpt-input ${darkMode ? 'dark' : 'light'}`}>
+              <div className={`input-bar ${darkMode ? 'dark' : 'light'}`}>
+                <textarea
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  placeholder={activeThreadId ? 'Send a message...' : 'Create a chat to get started...'}
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                  disabled={sending || !activeThreadId || session.limit_reached}
+                />
+                <button
+                  type="button"
+                  aria-label="Send"
+                  onClick={handleSend}
+                  disabled={sending || !input.trim() || !activeThreadId || session.limit_reached}
+                >
+                  {sending ? '...' : '➤'}
+                </button>
+              </div>
+              {error && <p className="input-error">{error}</p>}
+              <p className="input-disclaimer">
+                {session.questions_remaining} question{session.questions_remaining === 1 ? '' : 's'} left in this chat.
+              </p>
+              <p className="input-disclaimer">
+                Mama Akinyi may produce inaccurate information about people, places, or facts.
+              </p>
+            </div>
           </div>
         </div>
       </div>

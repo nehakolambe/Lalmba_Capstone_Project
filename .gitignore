@@ -21,6 +21,7 @@ __pycache__/
 *.db-journal
 *.db-wal
 backend/data/chroma/
+backend/data/chat_memory_chroma/
 
 # Node/React
 node_modules/

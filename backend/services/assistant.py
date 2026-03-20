@@ -93,11 +93,12 @@ def generate_assistant_reply(
         logger.info("Full user prompt:\n%s", user_prompt)
 
     try:
-        return generate_response(
+        reply = generate_response(
             user_prompt,
             system=SYSTEM_PROMPT,
             timeout=120,
         )
+        return reply
     except LlamaCppError as e:
         logger.exception(
             "llama.cpp failed: %s (reason=%s status=%s)",
@@ -108,6 +109,7 @@ def generate_assistant_reply(
         if not fallback_on_error:
             raise
         return "I’m having trouble reaching the local AI model right now. Please try again in a moment."
+
 
 
 SUMMARY_SYSTEM_PROMPT = """You create short internal tutoring summaries for memory.

@@ -5,7 +5,7 @@ import logging
 from flask import current_app, jsonify, request
 
 from ..extensions import db
-from ..models import Message, Progress
+from ..models import ChatThread, Message, Progress
 from ..services.assistant import generate_assistant_reply, generate_conversation_summary
 from ..services.app_search import AppMatch, search_apps
 from ..services.chat_memory import get_chat_memory
@@ -19,6 +19,15 @@ from ..services.conversation_state import (
 )
 from ..services.llama_cpp_client import LlamaCppError
 from ..services.prompts import MatchedAppContext
+from ..services.chat_threads import (
+    build_auto_thread_title,
+    create_thread,
+    get_or_create_default_thread,
+    get_thread,
+    list_threads,
+    normalize_thread_title,
+    touch_thread,
+)
 from ..utils import error_response, login_required
 from . import chat_bp
 
@@ -29,6 +38,7 @@ logger = logging.getLogger(__name__)
 @login_required
 def history(user):
     """Return recent chat history for the authenticated user."""
+    thread = _resolve_thread_from_request(user.id)
     try:
         limit = int(request.args.get("limit", 50))
     except ValueError:
@@ -36,19 +46,74 @@ def history(user):
     limit = max(1, min(limit, 200))
 
     chat_entries = (
-        Message.query.filter_by(user_id=user.id)
+        Message.query.filter_by(user_id=user.id, thread_id=thread.id)
         .order_by(Message.created_at.desc())
         .limit(limit)
         .all()
     )
     ordered = list(reversed(chat_entries))
-    conversation = get_or_create_conversation_state(user.id)
+    conversation = get_or_create_conversation_state(user.id, thread.id)
     return jsonify(
         {
+            "thread": thread.to_dict(),
             "history": [item.to_dict() for item in ordered],
             "session": _session_payload(conversation),
         }
     )
+
+
+@chat_bp.get("/chat/threads")
+@login_required
+def thread_list(user):
+    """Return chat threads for the current user, creating one if needed."""
+    get_or_create_default_thread(user.id)
+    db.session.commit()
+    return jsonify({"threads": [thread.to_dict() for thread in list_threads(user.id)]})
+
+
+@chat_bp.post("/chat/threads")
+@login_required
+def create_chat_thread(user):
+    """Create a new empty chat thread."""
+    payload = request.get_json(silent=True) or {}
+    thread = create_thread(user.id, title=payload.get("title"))
+    db.session.commit()
+    return jsonify({"thread": thread.to_dict()}), 201
+
+
+@chat_bp.patch("/chat/threads/<int:thread_id>")
+@login_required
+def rename_chat_thread(user, thread_id: int):
+    """Rename an existing chat thread."""
+    thread = get_thread(user.id, thread_id)
+    if thread is None:
+        return error_response("Chat thread not found", 404)
+
+    payload = request.get_json(silent=True) or {}
+    title = normalize_thread_title(payload.get("title"))
+    if not title.strip():
+        return error_response("Chat title is required", 400)
+
+    thread.title = title
+    touch_thread(thread)
+    db.session.commit()
+    return jsonify({"thread": thread.to_dict()})
+
+
+@chat_bp.delete("/chat/threads/<int:thread_id>")
+@login_required
+def delete_chat_thread(user, thread_id: int):
+    """Delete a chat thread and all of its related state."""
+    thread = get_thread(user.id, thread_id)
+    if thread is None:
+        return error_response("Chat thread not found", 404)
+
+    chat_memory = get_chat_memory(current_app)
+    if chat_memory is not None:
+        chat_memory.clear_thread(user.id, thread.id)
+    db.session.delete(thread)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @chat_bp.post("/chat/message")
@@ -60,19 +125,26 @@ def chat_message(user):
     if not message_text:
         return error_response("Message text is required", 400)
 
-    conversation = get_or_create_conversation_state(user.id)
+    thread = _resolve_thread_from_payload(user.id, payload)
+    conversation = get_or_create_conversation_state(user.id, thread.id)
     if (
         conversation.question_count >= current_app.config["CHAT_QUESTION_LIMIT"]
     ):
         return jsonify(
             {
+                "thread": thread.to_dict(),
                 "messages": [_build_ephemeral_assistant_message(_question_limit_message())],
                 "session": _session_payload(conversation),
             }
         ), 200
 
     has_previous_assistant_message = (
-        Message.query.filter_by(user_id=user.id, role="assistant").first() is not None
+        Message.query.filter_by(
+            user_id=user.id,
+            thread_id=thread.id,
+            role="assistant",
+        ).first()
+        is not None
     )
     matched_app = _find_matched_app(message_text)
     surfaced_app = _maybe_surface_app_suggestion(conversation, message_text, matched_app)
@@ -80,7 +152,7 @@ def chat_message(user):
     chat_memory = get_chat_memory(current_app)
     retrieval = None
     if chat_memory is not None:
-        retrieval = chat_memory.retrieve_context(user.id, message_text)
+        retrieval = chat_memory.retrieve_context(user.id, thread.id, message_text)
 
     try:
         reply_text = generate_assistant_reply(
@@ -114,6 +186,7 @@ def chat_message(user):
 
     return _persist_tutor_exchange(
         user=user,
+        thread=thread,
         conversation=conversation,
         visible_user_text=message_text,
         tutor_query_text=message_text,
@@ -126,17 +199,18 @@ def chat_message(user):
 @chat_bp.post("/chat/reset")
 @login_required
 def reset_chat(user):
-    """Delete all messages AND progress for the authenticated user."""
-    Message.query.filter_by(user_id=user.id).delete()
-    Progress.query.filter_by(user_id=user.id).delete()
-    reset_conversation_state(user.id)
-
+    """Delete messages and progress for one chat thread."""
+    payload = request.get_json(silent=True) or {}
+    thread = _resolve_thread_from_payload(user.id, payload)
+    Message.query.filter_by(user_id=user.id, thread_id=thread.id).delete()
+    Progress.query.filter_by(user_id=user.id, thread_id=thread.id).delete()
+    reset_conversation_state(user.id, thread.id)
     chat_memory = get_chat_memory(current_app)
     if chat_memory is not None:
-        chat_memory.clear_user(user.id)
-
+        chat_memory.clear_thread(user.id, thread.id)
+    touch_thread(thread)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "thread": thread.to_dict()})
 
 
 def _find_matched_app(message_text: str) -> MatchedAppContext | None:
@@ -173,6 +247,7 @@ def _build_matched_app_context(match: AppMatch) -> MatchedAppContext:
 def _persist_tutor_exchange(
     *,
     user,
+    thread,
     conversation,
     visible_user_text: str,
     tutor_query_text: str,
@@ -180,20 +255,29 @@ def _persist_tutor_exchange(
     chat_memory,
     surfaced_app: MatchedAppContext | None,
 ):
-    user_entry, assistant_entry = _build_exchange_entries(user.id, visible_user_text, assistant_text)
+    user_entry, assistant_entry = _build_exchange_entries(
+        user.id,
+        thread.id,
+        visible_user_text,
+        assistant_text,
+    )
     db.session.add(user_entry)
     db.session.add(assistant_entry)
     conversation.turns_since_last_summary += 1
     conversation.question_count += 1
+    if thread.title == "New chat":
+        thread.title = build_auto_thread_title(visible_user_text)
+    touch_thread(thread)
     _remember_app_suggestion(conversation, visible_user_text, surfaced_app)
 
     archive_doc_id: str | None = None
     try:
         if should_refresh_summary(conversation):
-            _refresh_summary(user.id, conversation)
+            _refresh_summary(user.id, thread.id, conversation)
         if chat_memory is not None:
             archive_doc_id = chat_memory.archive_turn(
                 user_id=user.id,
+                thread_id=thread.id,
                 query_text=tutor_query_text,
                 response_text=assistant_text,
             )
@@ -212,11 +296,12 @@ def _persist_tutor_exchange(
         )
 
     if chat_memory is not None:
-        chat_memory.append_recent_turn(user.id, tutor_query_text, assistant_text)
+        chat_memory.append_recent_turn(user.id, thread.id, tutor_query_text, assistant_text)
 
     return (
         jsonify(
             {
+                "thread": thread.to_dict(),
                 "messages": [user_entry.to_dict(), assistant_entry.to_dict()],
                 "session": _session_payload(conversation),
             }
@@ -225,9 +310,10 @@ def _persist_tutor_exchange(
     )
 
 
-def _refresh_summary(user_id: int, conversation) -> None:
+def _refresh_summary(user_id: int, thread_id: int, conversation) -> None:
     overlap_turns, recent_turns = load_turns_since_last_summary(
         user_id,
+        thread_id,
         overlap_turns=summary_overlap_turns(),
         conversation=conversation,
     )
@@ -239,10 +325,15 @@ def _refresh_summary(user_id: int, conversation) -> None:
     conversation.turns_since_last_summary = 0
 
 
-def _build_exchange_entries(user_id: int, user_text: str, assistant_text: str) -> tuple[Message, Message]:
+def _build_exchange_entries(
+    user_id: int,
+    thread_id: int,
+    user_text: str,
+    assistant_text: str,
+) -> tuple[Message, Message]:
     return (
-        Message(user_id=user_id, role="user", content=user_text),
-        Message(user_id=user_id, role="assistant", content=assistant_text),
+        Message(user_id=user_id, thread_id=thread_id, role="user", content=user_text),
+        Message(user_id=user_id, thread_id=thread_id, role="assistant", content=assistant_text),
     )
 
 
@@ -324,3 +415,24 @@ def _looks_like_explicit_app_request(message_text: str) -> bool:
         "launch ",
     )
     return any(term in normalized for term in explicit_terms)
+
+
+def _resolve_thread_id(raw_value) -> int | None:
+    if raw_value in (None, ""):
+        return None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_thread_from_request(user_id: int) -> ChatThread:
+    requested_thread_id = _resolve_thread_id(request.args.get("thread_id"))
+    thread = get_thread(user_id, requested_thread_id) if requested_thread_id else None
+    return thread or get_or_create_default_thread(user_id)
+
+
+def _resolve_thread_from_payload(user_id: int, payload: dict) -> ChatThread:
+    requested_thread_id = _resolve_thread_id(payload.get("thread_id"))
+    thread = get_thread(user_id, requested_thread_id) if requested_thread_id else None
+    return thread or get_or_create_default_thread(user_id)

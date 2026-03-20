@@ -20,24 +20,27 @@ class FakeChatMemory:
         self.deleted = []
         self.cleared = []
 
-    def retrieve_context(self, user_id, query_text):
-        self.last_retrieve = (user_id, query_text)
+    def retrieve_context(self, user_id, thread_id, query_text):
+        self.last_retrieve = (user_id, thread_id, query_text)
         return self.retrieval
 
-    def archive_turn(self, *, user_id, query_text, response_text, timestamp=None):
+    def archive_turn(self, *, user_id, thread_id, query_text, response_text, timestamp=None):
         if self.archive_error is not None:
             raise self.archive_error
-        self.archived.append((user_id, query_text, response_text))
-        return f"user-{user_id}-turn-{len(self.archived)}"
+        self.archived.append((user_id, thread_id, query_text, response_text))
+        return f"user-{user_id}-thread-{thread_id}-turn-{len(self.archived)}"
 
     def delete_archive_doc(self, doc_id):
         self.deleted.append(doc_id)
 
-    def append_recent_turn(self, user_id, query_text, response_text):
-        self.appended.append((user_id, query_text, response_text))
+    def append_recent_turn(self, user_id, thread_id, query_text, response_text):
+        self.appended.append((user_id, thread_id, query_text, response_text))
 
     def clear_user(self, user_id):
         self.cleared.append(user_id)
+
+    def clear_thread(self, user_id, thread_id):
+        self.cleared.append((user_id, thread_id))
 
 
 class FakeAppIndex:
@@ -80,8 +83,8 @@ def test_chat_message_history_and_reset(client, app, registered_user_payload, mo
     assert len(message_data["messages"]) == 2
     assert message_data["session"]["question_count"] == 1
     assert message_data["session"]["questions_remaining"] == 9
-    assert fake_memory.archived == [(1, "How are you?", "Mocked assistant reply")]
-    assert fake_memory.appended == [(1, "How are you?", "Mocked assistant reply")]
+    assert fake_memory.archived == [(1, 1, "How are you?", "Mocked assistant reply")]
+    assert fake_memory.appended == [(1, 1, "How are you?", "Mocked assistant reply")]
 
     history_response = client.get("/chat/history?limit=1")
     history_data = history_response.get_json()
@@ -92,7 +95,7 @@ def test_chat_message_history_and_reset(client, app, registered_user_payload, mo
 
     reset_response = client.post("/chat/reset")
     assert reset_response.status_code == 200
-    assert fake_memory.cleared == [1]
+    assert fake_memory.cleared == [(1, 1)]
 
     post_reset_history = client.get("/chat/history")
     post_reset_data = post_reset_history.get_json()
@@ -322,7 +325,7 @@ def test_chat_message_passes_retrieved_memory_to_prompt_builder(
     response = client.post("/chat/message", json={"text": "What now?"})
 
     assert response.status_code == 201
-    assert fake_memory.last_retrieve == (1, "What now?")
+    assert fake_memory.last_retrieve == (1, 1, "What now?")
     assert len(captured["kwargs"]["retrieved_background"]) == 1
     assert len(captured["kwargs"]["recent_turns"]) == 1
     assert captured["kwargs"]["conversation_summary"] is None
@@ -405,8 +408,51 @@ def test_chat_message_rolls_back_archive_when_sql_commit_fails(
     response = client.post("/chat/message", json={"text": "Question"})
 
     assert response.status_code == 503
-    assert fake_memory.deleted == ["user-1-turn-1"]
+    assert fake_memory.deleted == ["user-1-thread-1-turn-1"]
     assert fake_memory.appended == []
+
+
+def test_chat_threads_do_not_share_memory_context(
+    client, app, registered_user_payload, monkeypatch
+):
+    from backend.services.chat_memory import MemoryRetrievalResult
+
+    _register_and_login(client, registered_user_payload)
+
+    fake_memory = FakeChatMemory(
+        retrieval=MemoryRetrievalResult(
+            recent_turns=[],
+            matches_returned=0,
+            matches_after_threshold=0,
+            matches_after_budget=0,
+            background_chars=0,
+            anchors=[],
+        )
+    )
+    app.extensions["chat_memory"] = fake_memory
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "backend.routes.chat.generate_assistant_reply",
+        lambda message_text, **_kwargs: f"Reply to {message_text}",
+    )
+
+    first = client.post("/chat/message", json={"text": "i want to learn paint"})
+    assert first.status_code == 201
+
+    thread_response = client.post("/chat/threads", json={})
+    thread_id = thread_response.get_json()["thread"]["id"]
+
+    second = client.post(
+        "/chat/message",
+        json={"thread_id": thread_id, "text": "what is rain?"},
+    )
+
+    assert second.status_code == 201
+    assert fake_memory.archived == [
+        (1, 1, "i want to learn paint", "Reply to i want to learn paint"),
+        (1, thread_id, "what is rain?", "Reply to what is rain?"),
+    ]
+    assert fake_memory.last_retrieve == (1, thread_id, "what is rain?")
 
 
 def test_chat_updates_summary_after_summary_window(client, app, registered_user_payload, monkeypatch):

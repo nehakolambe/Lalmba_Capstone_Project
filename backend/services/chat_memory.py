@@ -77,22 +77,27 @@ class MemoryRetrievalResult:
 
 
 class ChatMemoryBuffer:
-    """Lightweight per-user FIFO memory kept only in-process."""
+    """Lightweight per-thread FIFO memory kept only in-process."""
 
     def __init__(self, max_turns: int):
         self.max_turns = max(1, max_turns)
-        self._buffers: dict[int, deque[CompletedTurn]] = defaultdict(
+        self._buffers: dict[tuple[int, int], deque[CompletedTurn]] = defaultdict(
             lambda: deque(maxlen=self.max_turns)
         )
 
-    def read(self, user_id: int) -> list[CompletedTurn]:
-        return list(self._buffers.get(user_id, ()))
+    def read(self, user_id: int, thread_id: int) -> list[CompletedTurn]:
+        return list(self._buffers.get((user_id, thread_id), ()))
 
-    def append(self, user_id: int, turn: CompletedTurn) -> None:
-        self._buffers[user_id].append(turn)
+    def append(self, user_id: int, thread_id: int, turn: CompletedTurn) -> None:
+        self._buffers[(user_id, thread_id)].append(turn)
 
-    def clear(self, user_id: int) -> None:
-        self._buffers.pop(user_id, None)
+    def clear_thread(self, user_id: int, thread_id: int) -> None:
+        self._buffers.pop((user_id, thread_id), None)
+
+    def clear_user(self, user_id: int) -> None:
+        stale_keys = [key for key in self._buffers if key[0] == user_id]
+        for key in stale_keys:
+            self._buffers.pop(key, None)
 
 
 class ChatMemoryService:
@@ -115,11 +120,16 @@ class ChatMemoryService:
         self.threshold = threshold
         self.anchor_char_budget = max(0, anchor_char_budget)
 
-    def read_recent_turns(self, user_id: int) -> list[CompletedTurn]:
-        return self.buffer.read(user_id)
+    def read_recent_turns(self, user_id: int, thread_id: int) -> list[CompletedTurn]:
+        return self.buffer.read(user_id, thread_id)
 
-    def retrieve_context(self, user_id: int, query_text: str) -> MemoryRetrievalResult:
-        recent_turns = self.buffer.read(user_id)
+    def retrieve_context(
+        self,
+        user_id: int,
+        thread_id: int,
+        query_text: str,
+    ) -> MemoryRetrievalResult:
+        recent_turns = self.buffer.read(user_id, thread_id)
         cleaned_query = (query_text or "").strip()
         if not cleaned_query:
             return MemoryRetrievalResult(recent_turns, 0, 0, 0, 0, [])
@@ -128,7 +138,7 @@ class ChatMemoryService:
         result = self.collection.query(
             query_embeddings=[query_embedding.tolist()],
             n_results=self.top_k,
-            where={"user_id": str(user_id)},
+            where=self._thread_filter(user_id, thread_id),
             include=["documents", "metadatas", "distances"],
         )
 
@@ -178,12 +188,13 @@ class ChatMemoryService:
         self,
         *,
         user_id: int,
+        thread_id: int,
         query_text: str,
         response_text: str,
         timestamp: datetime | None = None,
     ) -> str:
-        turn_index = self.next_turn_index(user_id)
-        doc_id = self._doc_id(user_id, turn_index)
+        turn_index = self.next_turn_index(user_id, thread_id)
+        doc_id = self._doc_id(user_id, thread_id, turn_index)
         created_at = (timestamp or datetime.now(timezone.utc)).astimezone(timezone.utc)
         document = self._format_document(query_text, response_text)
         embedding = encode_sentences(self.model, document).tolist()
@@ -194,6 +205,7 @@ class ChatMemoryService:
             metadatas=[
                 {
                     "user_id": str(user_id),
+                    "thread_id": str(thread_id),
                     "timestamp": created_at.isoformat(),
                     "turn_index": turn_index,
                 }
@@ -201,21 +213,35 @@ class ChatMemoryService:
         )
         return doc_id
 
-    def append_recent_turn(self, user_id: int, query_text: str, response_text: str) -> None:
+    def append_recent_turn(
+        self,
+        user_id: int,
+        thread_id: int,
+        query_text: str,
+        response_text: str,
+    ) -> None:
         self.buffer.append(
             user_id,
+            thread_id,
             CompletedTurn(user_text=query_text, assistant_text=response_text),
         )
 
     def clear_user(self, user_id: int) -> None:
-        self.buffer.clear(user_id)
+        self.buffer.clear_user(user_id)
         self.collection.delete(where={"user_id": str(user_id)})
+
+    def clear_thread(self, user_id: int, thread_id: int) -> None:
+        self.buffer.clear_thread(user_id, thread_id)
+        self.collection.delete(where=self._thread_filter(user_id, thread_id))
 
     def delete_archive_doc(self, doc_id: str) -> None:
         self.collection.delete(ids=[doc_id])
 
-    def next_turn_index(self, user_id: int) -> int:
-        result = self.collection.get(where={"user_id": str(user_id)}, include=[])
+    def next_turn_index(self, user_id: int, thread_id: int) -> int:
+        result = self.collection.get(
+            where=self._thread_filter(user_id, thread_id),
+            include=[],
+        )
         return len(result.get("ids") or []) + 1
 
     @staticmethod
@@ -223,8 +249,17 @@ class ChatMemoryService:
         return f"User: {query_text}\nAssistant: {response_text}"
 
     @staticmethod
-    def _doc_id(user_id: int, turn_index: int) -> str:
-        return f"user-{user_id}-turn-{turn_index}"
+    def _doc_id(user_id: int, thread_id: int, turn_index: int) -> str:
+        return f"user-{user_id}-thread-{thread_id}-turn-{turn_index}"
+
+    @staticmethod
+    def _thread_filter(user_id: int, thread_id: int) -> dict[str, list[dict[str, str]]]:
+        return {
+            "$and": [
+                {"user_id": {"$eq": str(user_id)}},
+                {"thread_id": {"$eq": str(thread_id)}},
+            ]
+        }
 
 
 def initialize_chat_memory(app: Flask) -> ChatMemoryService | None:
