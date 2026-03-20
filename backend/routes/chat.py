@@ -108,6 +108,9 @@ def delete_chat_thread(user, thread_id: int):
     if thread is None:
         return error_response("Chat thread not found", 404)
 
+    chat_memory = get_chat_memory(current_app)
+    if chat_memory is not None:
+        chat_memory.clear_thread(user.id, thread.id)
     db.session.delete(thread)
     db.session.commit()
     return jsonify({"ok": True})
@@ -149,7 +152,7 @@ def chat_message(user):
     chat_memory = get_chat_memory(current_app)
     retrieval = None
     if chat_memory is not None:
-        retrieval = chat_memory.retrieve_context(user.id, message_text)
+        retrieval = chat_memory.retrieve_context(user.id, thread.id, message_text)
 
     try:
         reply_text = generate_assistant_reply(
@@ -202,6 +205,9 @@ def reset_chat(user):
     Message.query.filter_by(user_id=user.id, thread_id=thread.id).delete()
     Progress.query.filter_by(user_id=user.id, thread_id=thread.id).delete()
     reset_conversation_state(user.id, thread.id)
+    chat_memory = get_chat_memory(current_app)
+    if chat_memory is not None:
+        chat_memory.clear_thread(user.id, thread.id)
     touch_thread(thread)
     db.session.commit()
     return jsonify({"ok": True, "thread": thread.to_dict()})
@@ -271,6 +277,7 @@ def _persist_tutor_exchange(
         if chat_memory is not None:
             archive_doc_id = chat_memory.archive_turn(
                 user_id=user.id,
+                thread_id=thread.id,
                 query_text=tutor_query_text,
                 response_text=assistant_text,
             )
@@ -289,7 +296,7 @@ def _persist_tutor_exchange(
         )
 
     if chat_memory is not None:
-        chat_memory.append_recent_turn(user.id, tutor_query_text, assistant_text)
+        chat_memory.append_recent_turn(user.id, thread.id, tutor_query_text, assistant_text)
 
     return (
         jsonify(
