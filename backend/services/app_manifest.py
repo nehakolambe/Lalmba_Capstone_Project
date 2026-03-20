@@ -15,6 +15,8 @@ class AppManifestEntry:
     name: str
     description: str
     tutorial_steps: tuple[str, ...]
+    aliases: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
 
 
 def load_app_manifest(path: str | Path) -> list[AppManifestEntry]:
@@ -52,6 +54,8 @@ def _validate_entry(raw_entry: object, index: int) -> AppManifestEntry:
         name=name,
         description=description,
         tutorial_steps=tuple(tutorial_steps),
+        aliases=tuple(_optional_string_list(raw_entry, "aliases", index)),
+        tags=tuple(_optional_string_list(raw_entry, "tags", index)),
     )
 
 
@@ -80,3 +84,21 @@ def _require_steps(raw_entry: dict[str, object], index: int) -> list[str]:
             )
         cleaned_steps.append(step.strip())
     return cleaned_steps
+
+
+def _optional_string_list(raw_entry: dict[str, object], field: str, index: int) -> list[str]:
+    value = raw_entry.get(field)
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise AppManifestError(f"App manifest entry {index} field '{field}' must be an array")
+
+    cleaned: list[str] = []
+    for item_index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise AppManifestError(
+                f"App manifest entry {index} field '{field}' item {item_index} "
+                "must be a non-empty string"
+            )
+        cleaned.append(item.strip())
+    return cleaned
