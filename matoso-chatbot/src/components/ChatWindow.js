@@ -12,6 +12,8 @@ import {
 } from '../api';
 import logo from '../assets/logo.png';
 
+const MAX_INPUT_HEIGHT = 160;
+
 function sortThreads(list) {
   return [...list].sort((left, right) => {
     const leftTime = Date.parse(left.updated_at || left.created_at || 0);
@@ -56,6 +58,18 @@ function ChatWindow({ user, onLogout }) {
   });
 
   const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(textarea.scrollHeight, MAX_INPUT_HEIGHT);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden';
+  }, [input, activeThreadId]);
+
   useEffect(() => {
     if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -539,6 +553,7 @@ function ChatWindow({ user, onLogout }) {
             <div className={`chatgpt-input ${darkMode ? 'dark' : 'light'}`}>
               <div className={`input-bar ${darkMode ? 'dark' : 'light'}`}>
                 <textarea
+                  ref={textareaRef}
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   placeholder={activeThreadId ? 'Send a message...' : 'Create a chat to get started...'}
