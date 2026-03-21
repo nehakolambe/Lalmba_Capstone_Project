@@ -169,3 +169,36 @@ test('creates and renames chats from the sidebar', async () => {
   await waitFor(() => expect(renameThread).toHaveBeenCalledWith(202, 'Project ideas'));
   expect(await screen.findByRole('button', { name: /^project ideas$/i })).toBeInTheDocument();
 });
+
+test('keeps multiline input visible and sends on enter', async () => {
+  sendMessage.mockResolvedValue({
+    thread: {
+      ...defaultThread,
+      updated_at: '2026-01-04T00:00:00'
+    },
+    messages: [
+      { role: 'user', content: 'First line\nSecond line' },
+      { role: 'assistant', content: 'Thanks for the detailed question.' }
+    ],
+    session: {
+      question_count: 1,
+      question_limit: 10,
+      questions_remaining: 9,
+      limit_reached: false
+    }
+  });
+
+  render(<ChatWindow user={user} onLogout={jest.fn()} />);
+
+  const composer = await screen.findByPlaceholderText(/send a message/i);
+  fireEvent.change(composer, { target: { value: 'First line' } });
+  fireEvent.keyDown(composer, { key: 'Enter', code: 'Enter', shiftKey: true });
+  fireEvent.change(composer, { target: { value: 'First line\nSecond line' } });
+
+  expect(composer).toHaveValue('First line\nSecond line');
+
+  fireEvent.keyDown(composer, { key: 'Enter', code: 'Enter' });
+
+  await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(101, 'First line\nSecond line'));
+  expect(await screen.findByText(/thanks for the detailed question/i)).toBeInTheDocument();
+});
