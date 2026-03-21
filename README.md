@@ -323,7 +323,11 @@ Each manifest entry must include:
 - `description`
 - `tutorial_steps`
 
-On server startup, the backend validates this file and builds an in-memory vector index from each app description.
+Optional semantic fields:
+- `aliases`
+- `tags`
+
+On server startup, the backend validates this file and builds an in-memory vector index from a normalized semantic profile for each app. That profile combines the app name, description, aliases, and tags so indirect requests can match more reliably.
 
 ## 12. Test commands
 

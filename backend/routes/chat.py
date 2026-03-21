@@ -226,10 +226,11 @@ def _find_matched_app(message_text: str) -> MatchedAppContext | None:
         return None
 
     logger.info(
-        "Matched app %s (%s) with score %.3f",
+        "Matched app %s (%s) with score %.3f (%.1f%% match)",
         match.app.app_id,
         match.app.name,
         match.score,
+        match.score * 100.0,
     )
     return _build_matched_app_context(match)
 
