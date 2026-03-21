@@ -159,5 +159,166 @@
       "Start a new graphing or geometry activity from the main workspace.",
       "Use one tool like Point, Line, or Graph to place your first object on the screen."
     ]
+  },
+  {
+    "app_id": "calculator",
+    "name": "Calculator",
+    "description": "A simple math tool for solving everyday number problems like addition, subtraction, multiplication, division, and percentages.",
+    "aliases": [
+      "math calculator",
+      "number tool",
+      "basic calculator"
+    ],
+    "tags": [
+      "calculator",
+      "math",
+      "numbers",
+      "addition",
+      "subtraction",
+      "percentages"
+    ],
+    "tutorial_steps": [
+      "Open the 'Calculator' app from the EndlessOS app grid.",
+      "Tap or click the number buttons to enter a simple problem, such as 12 + 8.",
+      "Press '=' to see the answer and try another calculation."
+    ]
+  },
+  {
+    "app_id": "google_primer",
+    "name": "Google Primer",
+    "description": "A beginner-friendly learning app with short lessons on business, marketing, communication, and digital skills.",
+    "aliases": [
+      "primer",
+      "business lessons",
+      "marketing app"
+    ],
+    "tags": [
+      "google primer",
+      "business",
+      "marketing",
+      "communication",
+      "digital skills",
+      "entrepreneurship"
+    ],
+    "tutorial_steps": [
+      "Find and open 'Google Primer' from the EndlessOS applications menu.",
+      "Choose a lesson topic such as marketing, communication, or business basics.",
+      "Open the first short lesson and read through the opening tip or activity."
+    ]
+  },
+  {
+    "app_id": "health",
+    "name": "Health",
+    "description": "An educational app that helps learners explore health topics such as the body, hygiene, nutrition, and staying well.",
+    "aliases": [
+      "health lessons",
+      "wellness app",
+      "body and hygiene"
+    ],
+    "tags": [
+      "health",
+      "wellness",
+      "body",
+      "hygiene",
+      "nutrition",
+      "healthy living"
+    ],
+    "tutorial_steps": [
+      "Open the 'Health' app from the EndlessOS app grid.",
+      "Choose a beginner topic like hygiene, nutrition, or how the body works.",
+      "Start the first lesson and follow the opening explanation or activity."
+    ]
+  },
+  {
+    "app_id": "how_to",
+    "name": "How To",
+    "description": "A practical learning app with step-by-step guides for everyday tasks, useful skills, and problem solving.",
+    "aliases": [
+      "how to app",
+      "help guide",
+      "step by step lessons"
+    ],
+    "tags": [
+      "how to",
+      "guides",
+      "instructions",
+      "everyday skills",
+      "help",
+      "practical learning"
+    ],
+    "tutorial_steps": [
+      "Look for the 'How To' app on EndlessOS and open it.",
+      "Browse the list of guides and pick one everyday topic that looks useful.",
+      "Open the guide and follow the first step to begin learning."
+    ]
+  },
+  {
+    "app_id": "investopedia",
+    "name": "Investopedia",
+    "description": "A finance learning app that explains money topics such as saving, budgeting, investing, markets, and financial terms.",
+    "aliases": [
+      "finance lessons",
+      "money app",
+      "investment guide"
+    ],
+    "tags": [
+      "investopedia",
+      "finance",
+      "money",
+      "budgeting",
+      "investing",
+      "savings"
+    ],
+    "tutorial_steps": [
+      "Open 'Investopedia' from the EndlessOS app menu.",
+      "Choose a beginner topic like budgeting, saving money, or investing basics.",
+      "Read the first article or lesson section to learn a key money term."
+    ]
+  },
+  {
+    "app_id": "sanitation",
+    "name": "Sanitation",
+    "description": "An educational app about clean water, safe hygiene, waste management, and healthy sanitation practices for daily life.",
+    "aliases": [
+      "cleanliness app",
+      "hygiene and sanitation",
+      "clean water lessons"
+    ],
+    "tags": [
+      "sanitation",
+      "hygiene",
+      "clean water",
+      "waste",
+      "health",
+      "cleanliness"
+    ],
+    "tutorial_steps": [
+      "Find the 'Sanitation' app on the EndlessOS app grid and launch it.",
+      "Pick a simple topic such as handwashing, clean water, or waste disposal.",
+      "Open the first lesson and follow the introduction to learn a healthy practice."
+    ]
+  },
+  {
+    "app_id": "scratch",
+    "name": "Scratch",
+    "description": "A creative coding app where beginners can build animations, stories, and simple games by snapping together blocks of code.",
+    "aliases": [
+      "coding for kids",
+      "block coding",
+      "programming app"
+    ],
+    "tags": [
+      "scratch",
+      "coding",
+      "programming",
+      "blocks",
+      "animation",
+      "games"
+    ],
+    "tutorial_steps": [
+      "Open 'Scratch' from the EndlessOS application menu.",
+      "Start a new project and look at the blocks, stage, and sprite area on the screen.",
+      "Drag one motion block into the workspace and click it to make your sprite move."
+    ]
   }
 ]

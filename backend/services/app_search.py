@@ -15,6 +15,8 @@ from .embeddings import EmbeddingModel, encode_sentences, load_embedding_model
 
 logger = logging.getLogger(__name__)
 _STOPWORDS = frozenset(ENGLISH_STOP_WORDS)
+_LEXICAL_WEIGHT = 0.3
+_PRIORITY_TOKEN_WEIGHT = 0.3
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,8 @@ class AppSearchIndex:
     entries: tuple[AppManifestEntry, ...]
     embeddings: np.ndarray
     semantic_profiles: tuple[str, ...]
+    profile_tokens: tuple[frozenset[str], ...]
+    priority_tokens: tuple[frozenset[str], ...]
     model_name: str
 
     @property
@@ -41,20 +45,46 @@ class AppSearchIndex:
         *,
         threshold: float,
     ) -> AppMatch | None:
-        """Return the best semantic match for a user query."""
+        """Return the best hybrid semantic/lexical match for a user query."""
         cleaned_query = normalize_query_text(query)
         if not cleaned_query or self.is_empty:
             return None
 
+        query_tokens = query_token_set(cleaned_query)
         query_embedding = encode_sentences(model, cleaned_query)
-        scores = self.embeddings @ query_embedding
-        best_index = int(np.argmax(scores))
-        best_score = float(scores[best_index])
+        semantic_scores = self.embeddings @ query_embedding
+
+        best_index = 0
+        best_semantic_score = float("-inf")
+        best_lexical_score = 0.0
+        best_score = float("-inf")
+        for index, semantic_score in enumerate(semantic_scores):
+            lexical_score = compute_lexical_overlap_score(
+                query_tokens,
+                self.profile_tokens[index],
+                self.priority_tokens[index],
+            )
+            final_score = combine_app_scores(
+                float(semantic_score),
+                lexical_score,
+            )
+            if final_score > best_score:
+                best_index = index
+                best_semantic_score = float(semantic_score)
+                best_lexical_score = lexical_score
+                best_score = final_score
+
         logger.info(
-            "App search query raw=%r normalized=%r best_app=%s score=%.3f matched_profile=%r",
+            (
+                "App search query raw=%r normalized=%r query_tokens=%s best_app=%s "
+                "semantic_score=%.3f lexical_score=%.3f final_score=%.3f matched_profile=%r"
+            ),
             query,
             cleaned_query,
+            sorted(query_tokens),
             self.entries[best_index].app_id,
+            best_semantic_score,
+            best_lexical_score,
             best_score,
             self.semantic_profiles[best_index],
         )
@@ -136,18 +166,24 @@ def build_app_index(
             entries=tuple(),
             embeddings=np.empty((0, 0), dtype=np.float32),
             semantic_profiles=tuple(),
+            profile_tokens=tuple(),
+            priority_tokens=tuple(),
             model_name=model_name,
         )
 
     if model is None:
         raise RuntimeError("Embedding model is required to build a non-empty app index")
     semantic_profiles = [build_semantic_profile(entry) for entry in entries]
+    profile_tokens = [build_profile_token_set(entry) for entry in entries]
+    priority_tokens = [build_priority_token_set(entry) for entry in entries]
     embeddings = encode_sentences(model, semantic_profiles)
 
     return AppSearchIndex(
         entries=tuple(entries),
         embeddings=embeddings,
         semantic_profiles=tuple(semantic_profiles),
+        profile_tokens=tuple(profile_tokens),
+        priority_tokens=tuple(priority_tokens),
         model_name=model_name,
     )
 
@@ -173,6 +209,60 @@ def normalize_query_text(text: str) -> str:
 def normalize_profile_text(text: str) -> str:
     """Normalize semantic profile text without removing stopwords."""
     return " ".join(_normalize_tokens(text))
+
+
+def query_token_set(text: str) -> frozenset[str]:
+    """Normalize a query into a unique set of content-bearing tokens."""
+    normalized = normalize_query_text(text)
+    if not normalized:
+        return frozenset()
+    return frozenset(normalized.split())
+
+
+def build_profile_token_set(entry: AppManifestEntry) -> frozenset[str]:
+    """Build a normalized token set for lexical overlap matching."""
+    parts = [
+        entry.name,
+        entry.description,
+        *entry.aliases,
+        *entry.tags,
+    ]
+    return _content_token_set(" ".join(part for part in parts if part))
+
+
+def build_priority_token_set(entry: AppManifestEntry) -> frozenset[str]:
+    """Build higher-priority lexical tokens from aliases and tags."""
+    parts = [
+        *entry.aliases,
+        *entry.tags,
+    ]
+    return _content_token_set(" ".join(part for part in parts if part))
+
+
+def compute_lexical_overlap_score(
+    query_tokens: frozenset[str],
+    profile_tokens: frozenset[str],
+    priority_tokens: frozenset[str],
+) -> float:
+    """Score lexical overlap cheaply using normalized token sets."""
+    if not query_tokens or not profile_tokens:
+        return 0.0
+
+    overlap_ratio = len(query_tokens & profile_tokens) / len(query_tokens)
+    priority_ratio = 0.0
+    if priority_tokens:
+        priority_ratio = len(query_tokens & priority_tokens) / len(query_tokens)
+    lexical_score = ((1.0 - _PRIORITY_TOKEN_WEIGHT) * overlap_ratio) + (
+        _PRIORITY_TOKEN_WEIGHT * priority_ratio
+    )
+    return min(1.0, lexical_score)
+
+
+def combine_app_scores(semantic_score: float, lexical_score: float) -> float:
+    """Blend semantic similarity with a lightweight lexical boost."""
+    semantic_score = max(-1.0, min(1.0, semantic_score))
+    lexical_score = max(0.0, min(1.0, lexical_score))
+    return semantic_score + ((1.0 - semantic_score) * (_LEXICAL_WEIGHT * lexical_score))
 
 
 def _normalize_tokens(text: str) -> list[str]:
@@ -207,3 +297,8 @@ def _trim_doubled_tail(token: str) -> str:
     if len(token) >= 2 and token[-1] == token[-2]:
         return token[:-1]
     return token
+
+
+def _content_token_set(text: str) -> frozenset[str]:
+    """Keep only normalized non-stopword tokens for lexical matching."""
+    return frozenset(token for token in _normalize_tokens(text) if token not in _STOPWORDS)
