@@ -205,7 +205,7 @@ Hybrid multi-turn memory:
 - `CHAT_SUMMARY_OVERLAP_TURNS` (default `1`)
 
 Frontend:
-- `REACT_APP_API_BASE` (default `http://localhost:5000`)
+- `REACT_APP_API_BASE` (default `http://localhost:5000` in React dev mode, same-origin when served by Flask)
 
 ## 9. Run the app
 
@@ -252,7 +252,37 @@ URLs:
 - Backend health: `http://localhost:5000/health`
 - `llama.cpp` models: `http://localhost:8080/v1/models`
 
-## 10. Multi-turn chat design
+## 10. Local Wi-Fi deployment for Endless laptops
+
+For the Dell-as-server deployment, do not run the React dev server on the Endless laptops.
+Build the frontend on the Dell once, then let Flask serve it from the same origin as the backend.
+
+Build the frontend on the Dell:
+
+```bash
+cd Lalmba_Capstone_Project
+./scripts/build_frontend.sh
+```
+
+Start the local services on the Dell:
+
+```bash
+cd Lalmba_Capstone_Project
+./run_all.sh
+```
+
+Then open the Dell from any Endless laptop on the same Wi-Fi:
+
+```text
+http://<dell-local-ip>:5000
+```
+
+Notes:
+- `run_all.sh` now expects the frontend build to already exist.
+- `llama.cpp` still stays private to the Dell backend.
+- Browser clients use one URL for both UI and API, which avoids cross-origin cookie issues.
+
+## 11. Multi-turn chat design
 
 The chat flow is now a hybrid memory system instead of a simple recent-history prompt.
 
@@ -280,7 +310,7 @@ Important behavior:
 - Control/app-choice turns are filtered out when reconstructing turns for summary generation.
 - Each chat session enforces a question cap using `CHAT_QUESTION_LIMIT`.
 
-## 11. API reference
+## 12. API reference
 
 Auth:
 - `POST /auth/register`
@@ -329,7 +359,7 @@ Optional semantic fields:
 
 On server startup, the backend validates this file and builds an in-memory vector index from a normalized semantic profile for each app. That profile combines the app name, description, aliases, and tags so indirect requests can match more reliably.
 
-## 12. Test commands
+## 13. Test commands
 
 Frontend tests:
 
@@ -346,7 +376,7 @@ source .venv/bin/activate
 pytest backend/tests -q
 ```
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 - `Cannot connect to server` in frontend:
   - confirm backend is running on `:5000`
   - confirm `REACT_APP_API_BASE` if non-default

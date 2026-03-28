@@ -3,6 +3,7 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
 
 
 def _as_bool(value: str, default: bool = False) -> bool:
@@ -27,6 +28,10 @@ class Config:
     DEBUG = _as_bool(os.getenv("FLASK_DEBUG"), False)
     # Allow React dev server defaults (http://localhost:3000)
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    FRONTEND_BUILD_DIR = os.getenv(
+        "FRONTEND_BUILD_DIR",
+        str(PROJECT_ROOT / "matoso-chatbot" / "build"),
+    )
     APP_MANIFEST_PATH = os.getenv(
         "APP_MANIFEST_PATH",
         str(BASE_DIR / "data" / "app_manifest.json"),
