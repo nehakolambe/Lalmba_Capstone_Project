@@ -44,6 +44,23 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
   return data;
 }
 
+async function parseJsonResponse(response) {
+  let data = null;
+  if (response.status !== 204) {
+    try { data = await response.json(); } catch { data = null; }
+  }
+
+  if (!response.ok) {
+    const message = (data && (data.error || data.message)) || response.statusText;
+    const error = new Error(message || 'Request failed');
+    error.status = response.status;
+    error.payload = data;
+    throw error;
+  }
+
+  return data;
+}
+
 export async function fetchSession() {
   try {
     const data = await request('/auth/me');
@@ -104,6 +121,100 @@ export async function sendMessage(threadId, text) {
     method: 'POST',
     body: { thread_id: threadId, text }
   });
+}
+
+export async function sendMessageStream(threadId, text, handlers = {}) {
+  const { onDelta, onDone, onError } = handlers;
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/chat/message/stream`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: threadId, text })
+    });
+  } catch (networkError) {
+    const error = new Error('Cannot connect to server');
+    error.cause = networkError;
+    error.network = true;
+    if (typeof onError === 'function') onError(error);
+    throw error;
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/x-ndjson')) {
+    const data = await parseJsonResponse(response);
+    if (typeof onDone === 'function') onDone(data);
+    return data;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const error = new Error('Streaming is not supported by this browser');
+    if (typeof onError === 'function') onError(error);
+    throw error;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let donePayload = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      let event;
+      try {
+        event = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+
+      if (event.type === 'delta') {
+        if (typeof onDelta === 'function') onDelta(event.content || '');
+      } else if (event.type === 'done') {
+        donePayload = event;
+        if (typeof onDone === 'function') onDone(event);
+      } else if (event.type === 'error') {
+        const error = new Error(event.error || 'Streaming request failed');
+        error.payload = event;
+        if (typeof onError === 'function') onError(error);
+        throw error;
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    try {
+      const event = JSON.parse(buffer.trim());
+      if (event.type === 'done') {
+        donePayload = event;
+        if (typeof onDone === 'function') onDone(event);
+      } else if (event.type === 'error') {
+        const error = new Error(event.error || 'Streaming request failed');
+        error.payload = event;
+        if (typeof onError === 'function') onError(error);
+        throw error;
+      }
+    } catch {}
+  }
+
+  if (!donePayload) {
+    const error = new Error('Streaming response ended unexpectedly');
+    if (typeof onError === 'function') onError(error);
+    throw error;
+  }
+
+  return donePayload;
 }
 
 export async function resetChat(threadId) {

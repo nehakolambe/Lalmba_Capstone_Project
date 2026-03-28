@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import logging
+import json
 
-from flask import current_app, jsonify, request
+from flask import Response, current_app, jsonify, request, stream_with_context
 
 from ..extensions import db
 from ..models import ChatThread, Message, Progress
-from ..services.assistant import generate_assistant_reply, generate_conversation_summary
+from ..services.assistant import (
+    generate_assistant_reply,
+    generate_conversation_summary,
+    stream_assistant_reply,
+)
 from ..services.app_search import AppMatch, search_apps
 from ..services.chat_memory import get_chat_memory
 from ..services.conversation_state import (
@@ -125,55 +130,21 @@ def chat_message(user):
     if not message_text:
         return error_response("Message text is required", 400)
 
-    thread = _resolve_thread_from_payload(user.id, payload)
-    conversation = get_or_create_conversation_state(user.id, thread.id)
-    if (
-        conversation.question_count >= current_app.config["CHAT_QUESTION_LIMIT"]
-    ):
-        return jsonify(
-            {
-                "thread": thread.to_dict(),
-                "messages": [_build_ephemeral_assistant_message(_question_limit_message())],
-                "session": _session_payload(conversation),
-            }
-        ), 200
-
-    has_previous_assistant_message = (
-        Message.query.filter_by(
-            user_id=user.id,
-            thread_id=thread.id,
-            role="assistant",
-        ).first()
-        is not None
-    )
-    matched_app = _find_matched_app(message_text)
-    surfaced_app = _maybe_surface_app_suggestion(conversation, message_text, matched_app)
-
-    chat_memory = get_chat_memory(current_app)
-    retrieval = None
-    if chat_memory is not None:
-        retrieval = chat_memory.retrieve_context(user.id, thread.id, message_text)
+    context = _prepare_chat_generation(user, payload, message_text)
+    if context["limit_response"] is not None:
+        return jsonify(context["limit_response"]), 200
 
     try:
         reply_text = generate_assistant_reply(
             message_text,
             user_name=user.full_name,
-            is_first_turn=not has_previous_assistant_message,
-            conversation_summary=conversation.current_summary,
-            matched_app=surfaced_app,
-            retrieved_background=[] if retrieval is None else retrieval.anchors,
-            recent_turns=[] if retrieval is None else retrieval.recent_turns,
+            is_first_turn=context["is_first_turn"],
+            conversation_summary=context["conversation"].current_summary,
+            matched_app=context["surfaced_app"],
+            retrieved_background=context["retrieved_background"],
+            recent_turns=context["recent_turns"],
             user_id=user.id,
-            prompt_log=None
-            if retrieval is None
-            else {
-                "chroma_matches": retrieval.matches_returned,
-                "threshold_matches": retrieval.matches_after_threshold,
-                "budget_matches": retrieval.matches_after_budget,
-                "background_chars": retrieval.background_chars,
-                "fifo_turns": len(retrieval.recent_turns),
-                "app_context": surfaced_app is not None,
-            },
+            prompt_log=context["prompt_log"],
         )
     except LlamaCppError as exc:
         logger.exception("Assistant reply generation failed for user %s", user.id)
@@ -186,14 +157,139 @@ def chat_message(user):
 
     return _persist_tutor_exchange(
         user=user,
-        thread=thread,
-        conversation=conversation,
+        thread=context["thread"],
+        conversation=context["conversation"],
         visible_user_text=message_text,
         tutor_query_text=message_text,
         assistant_text=reply_text,
-        chat_memory=chat_memory,
-        surfaced_app=surfaced_app,
+        chat_memory=context["chat_memory"],
+        surfaced_app=context["surfaced_app"],
     )
+
+
+@chat_bp.post("/chat/message/stream")
+@login_required
+def chat_message_stream(user):
+    """Persist a user message and stream the assistant reply."""
+    payload = request.get_json(silent=True) or {}
+    message_text = (payload.get("text") or "").strip()
+    if not message_text:
+        return error_response("Message text is required", 400)
+
+    context = _prepare_chat_generation(user, payload, message_text)
+    if context["limit_response"] is not None:
+        return jsonify(context["limit_response"]), 200
+
+    stream = stream_assistant_reply(
+        message_text,
+        user_name=user.full_name,
+        is_first_turn=context["is_first_turn"],
+        conversation_summary=context["conversation"].current_summary,
+        matched_app=context["surfaced_app"],
+        retrieved_background=context["retrieved_background"],
+        recent_turns=context["recent_turns"],
+        user_id=user.id,
+        prompt_log=context["prompt_log"],
+    )
+
+    assistant_parts: list[str] = []
+    try:
+        first_chunk = next(stream)
+    except StopIteration:
+        return error_response(
+            "I’m having trouble reaching the local AI model right now. Please try again in a moment.",
+            503,
+            details={"reason": "empty_response"},
+        )
+    except LlamaCppError as exc:
+        logger.exception("Assistant streaming failed before first chunk for user %s", user.id)
+        db.session.rollback()
+        return error_response(
+            "I’m having trouble reaching the local AI model right now. Please try again in a moment.",
+            503,
+            details={"reason": getattr(exc, "reason", None)},
+        )
+
+    assistant_parts.append(first_chunk)
+
+    @stream_with_context
+    def _event_stream():
+        yield _ndjson_event({"type": "delta", "content": first_chunk})
+        stream_failed = False
+        try:
+            for chunk in stream:
+                assistant_parts.append(chunk)
+                yield _ndjson_event({"type": "delta", "content": chunk})
+        except LlamaCppError as exc:
+            stream_failed = True
+            logger.exception("Assistant streaming failed mid-stream for user %s", user.id)
+            db.session.rollback()
+            yield _ndjson_event(
+                {
+                    "type": "error",
+                    "error": "I’m having trouble reaching the local AI model right now. Please try again in a moment.",
+                    "details": {"reason": getattr(exc, "reason", None)},
+                }
+            )
+
+        if stream_failed:
+            return
+
+        assistant_text = "".join(assistant_parts).strip()
+        if not assistant_text:
+            db.session.rollback()
+            yield _ndjson_event(
+                {
+                    "type": "error",
+                    "error": "I’m having trouble reaching the local AI model right now. Please try again in a moment.",
+                    "details": {"reason": "empty_response"},
+                }
+            )
+            return
+
+        persist_result = _persist_tutor_exchange(
+            user=user,
+            thread=context["thread"],
+            conversation=context["conversation"],
+            visible_user_text=message_text,
+            tutor_query_text=message_text,
+            assistant_text=assistant_text,
+            chat_memory=context["chat_memory"],
+            surfaced_app=context["surfaced_app"],
+        )
+
+        if isinstance(persist_result, tuple):
+            response, status = persist_result
+            if status >= 400:
+                data = response.get_json(silent=True) or {}
+                yield _ndjson_event(
+                    {
+                        "type": "error",
+                        "error": data.get("error")
+                        or "I’m having trouble saving conversation memory right now. Please try again in a moment.",
+                        "details": data.get("details"),
+                    }
+                )
+                return
+            body = response.get_json(silent=True) or {}
+        else:
+            body = persist_result.get_json(silent=True) or {}
+
+        messages = body.get("messages") or []
+        assistant_message = next(
+            (entry for entry in messages if entry.get("role") == "assistant"),
+            {"role": "assistant", "content": assistant_text},
+        )
+        yield _ndjson_event(
+            {
+                "type": "done",
+                "thread": body.get("thread"),
+                "message": assistant_message,
+                "session": body.get("session"),
+            }
+        )
+
+    return Response(_event_stream(), mimetype="application/x-ndjson")
 
 
 @chat_bp.post("/chat/reset")
@@ -348,6 +444,10 @@ def _build_ephemeral_assistant_message(content: str) -> dict[str, str | None]:
     }
 
 
+def _ndjson_event(payload: dict) -> str:
+    return f"{json.dumps(payload)}\n"
+
+
 def _session_payload(conversation) -> dict[str, int | bool | str | None]:
     return build_session_metadata(conversation)
 
@@ -437,3 +537,53 @@ def _resolve_thread_from_payload(user_id: int, payload: dict) -> ChatThread:
     requested_thread_id = _resolve_thread_id(payload.get("thread_id"))
     thread = get_thread(user_id, requested_thread_id) if requested_thread_id else None
     return thread or get_or_create_default_thread(user_id)
+
+
+def _prepare_chat_generation(user, payload: dict, message_text: str) -> dict:
+    thread = _resolve_thread_from_payload(user.id, payload)
+    conversation = get_or_create_conversation_state(user.id, thread.id)
+    if conversation.question_count >= current_app.config["CHAT_QUESTION_LIMIT"]:
+        return {
+            "limit_response": {
+                "thread": thread.to_dict(),
+                "messages": [_build_ephemeral_assistant_message(_question_limit_message())],
+                "session": _session_payload(conversation),
+            }
+        }
+
+    has_previous_assistant_message = (
+        Message.query.filter_by(
+            user_id=user.id,
+            thread_id=thread.id,
+            role="assistant",
+        ).first()
+        is not None
+    )
+    matched_app = _find_matched_app(message_text)
+    surfaced_app = _maybe_surface_app_suggestion(conversation, message_text, matched_app)
+
+    chat_memory = get_chat_memory(current_app)
+    retrieval = None
+    if chat_memory is not None:
+        retrieval = chat_memory.retrieve_context(user.id, thread.id, message_text)
+
+    return {
+        "limit_response": None,
+        "thread": thread,
+        "conversation": conversation,
+        "chat_memory": chat_memory,
+        "surfaced_app": surfaced_app,
+        "is_first_turn": not has_previous_assistant_message,
+        "retrieved_background": [] if retrieval is None else retrieval.anchors,
+        "recent_turns": [] if retrieval is None else retrieval.recent_turns,
+        "prompt_log": None
+        if retrieval is None
+        else {
+            "chroma_matches": retrieval.matches_returned,
+            "threshold_matches": retrieval.matches_after_threshold,
+            "budget_matches": retrieval.matches_after_budget,
+            "background_chars": retrieval.background_chars,
+            "fifo_turns": len(retrieval.recent_turns),
+            "app_context": surfaced_app is not None,
+        },
+    }
