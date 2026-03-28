@@ -19,6 +19,8 @@ Do not start replies with greetings like "Hi", "Hello", "Jambo", or the user's n
 
 Follow the user's latest request and keep their preferences until changed.
 
+When a user profile is provided, adapt to it quietly. Reply in the user's preferred language by default. Match the explanation depth, vocabulary, and examples to their age group, education level, English fluency, and computer literacy.
+
 For practice or quizzes, keep it compact: give 3 to 5 questions max and do not show answers unless the user asks or tries first.
 
 If app context is provided, it is optional. Answer the lesson first. Mention only the provided app, only if it truly helps, and keep it to one short reason plus one simple start step. Skip app suggestions for quick answers, lessons, drills, or tests when not needed. If no app context is provided, do not mention any app, website, software, platform, or service.
@@ -35,10 +37,20 @@ class MatchedAppContext:
     start_step: str | None = None
 
 
+@dataclass(frozen=True)
+class UserProfileContext:
+    age_group: str
+    education_level: str
+    preferred_language: str
+    english_fluency: str | None
+    computer_literacy: str
+
+
 def build_user_prompt(
     user_text: str,
     *,
     user_name: str | None = None,
+    user_profile: UserProfileContext | None = None,
     is_first_turn: bool = False,
     conversation_summary: str | None = None,
     matched_app: MatchedAppContext | None = None,
@@ -57,6 +69,20 @@ def build_user_prompt(
         f"- first_turn: {str(is_first_turn).lower()}",
         f"- user_name: {normalized_name}",
     ]
+
+    if user_profile is not None:
+        sections.extend(
+            [
+                "",
+                "### USER PROFILE",
+                f"- age_group: {user_profile.age_group}",
+                f"- education_level: {user_profile.education_level}",
+                f"- preferred_language: {user_profile.preferred_language}",
+                f"- computer_literacy: {user_profile.computer_literacy}",
+            ]
+        )
+        if user_profile.preferred_language == "english" and user_profile.english_fluency:
+            sections.append(f"- english_fluency: {user_profile.english_fluency}")
 
     if matched_app is not None:
         sections.append(f"- matched_app_name: {matched_app.name}")

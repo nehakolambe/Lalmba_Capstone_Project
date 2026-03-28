@@ -57,6 +57,15 @@ beforeEach(() => {
   deleteThread.mockResolvedValue({});
 });
 
+test('shows the empty-state welcome instead of a default assistant message', async () => {
+  render(<ChatWindow user={user} onLogout={jest.fn()} />);
+
+  await screen.findByRole('button', { name: /^starter chat$/i });
+  expect(screen.getByText(/^hello alice$/i)).toBeInTheDocument();
+  expect(screen.getByText(/what do you want to learn today/i)).toBeInTheDocument();
+  expect(screen.queryByText(/mama akinyi is here to help/i)).not.toBeInTheDocument();
+});
+
 test('sends a message and renders assistant response', async () => {
   sendMessageStream.mockImplementation(async (_threadId, _text, handlers = {}) => {
     handlers.onDelta?.('Mocked ');
@@ -158,7 +167,7 @@ test('does not render an empty assistant bubble before the first stream chunk ar
   });
   fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
 
-  expect(container.querySelectorAll('.chatgpt-messages .message-row.ai')).toHaveLength(2);
+  expect(container.querySelectorAll('.chatgpt-messages .message-row.ai')).toHaveLength(1);
   expect(screen.getByText(/thinking/i)).toBeInTheDocument();
 
   resolveStream();
@@ -261,7 +270,8 @@ test('reset chat clears current history', async () => {
   fireEvent.click(screen.getByRole('button', { name: /reset session/i }));
 
   await waitFor(() => expect(resetChat).toHaveBeenCalledWith(101));
-  expect(await screen.findByText(/hello alice!/i)).toBeInTheDocument();
+  expect(await screen.findByText(/^hello alice$/i)).toBeInTheDocument();
+  expect(screen.getByText(/what do you want to learn today/i)).toBeInTheDocument();
   expect(screen.getByText(/questions used 0\/10/i)).toBeInTheDocument();
 });
 
@@ -303,6 +313,16 @@ test('creates and renames chats from the sidebar', async () => {
   expect(await screen.findByRole('button', { name: /^project ideas$/i })).toBeInTheDocument();
 });
 
+test('opens questionnaire from the header action', async () => {
+  const onEditProfile = jest.fn();
+  render(<ChatWindow user={user} onLogout={jest.fn()} onEditProfile={onEditProfile} />);
+
+  await screen.findByRole('button', { name: /^starter chat$/i });
+  fireEvent.click(screen.getByRole('button', { name: /questionnaire/i }));
+
+  expect(onEditProfile).toHaveBeenCalled();
+});
+
 test('keeps multiline input visible and sends on enter', async () => {
   sendMessageStream.mockResolvedValue({
     type: 'done',
@@ -332,4 +352,62 @@ test('keeps multiline input visible and sends on enter', async () => {
 
   await waitFor(() => expect(sendMessageStream).toHaveBeenCalledWith(101, 'First line\nSecond line', expect.any(Object)));
   expect(await screen.findByText(/thanks for the detailed question/i)).toBeInTheDocument();
+});
+
+test('restores the previously active thread from local storage on refresh', async () => {
+  const secondThread = {
+    id: 202,
+    title: 'How is ice formed?',
+    created_at: '2026-01-02T00:00:00',
+    updated_at: '2026-01-03T00:00:00'
+  };
+
+  localStorage.setItem('activeThreadId:1', '202');
+  fetchThreads.mockResolvedValue([defaultThread, secondThread]);
+  fetchHistory.mockImplementation(async threadId => ({
+    thread: threadId === 202 ? secondThread : defaultThread,
+    history: [],
+    session: {
+      question_count: 0,
+      question_limit: 10,
+      questions_remaining: 10,
+      limit_reached: false
+    }
+  }));
+
+  render(<ChatWindow user={user} onLogout={jest.fn()} />);
+
+  await waitFor(() => expect(fetchHistory).toHaveBeenCalledWith(202));
+  expect(screen.getByRole('button', { name: /^how is ice formed\?$/i })).toBeInTheDocument();
+});
+
+test('repairs a default thread title from the first user question on reload', async () => {
+  const untitledThread = {
+    ...defaultThread,
+    title: 'New chat'
+  };
+  fetchThreads.mockResolvedValue([untitledThread]);
+  fetchHistory.mockResolvedValue({
+    thread: untitledThread,
+    history: [
+      { id: 1, role: 'user', content: 'what is fire?', created_at: '2026-01-01T00:00:00' },
+      { id: 2, role: 'assistant', content: 'Fire is hot.', created_at: '2026-01-01T00:00:01' }
+    ],
+    session: {
+      question_count: 1,
+      question_limit: 10,
+      questions_remaining: 9,
+      limit_reached: false
+    }
+  });
+  renameThread.mockResolvedValue({
+    ...untitledThread,
+    title: 'what is fire?',
+    updated_at: '2026-01-04T00:00:00'
+  });
+
+  render(<ChatWindow user={user} onLogout={jest.fn()} />);
+
+  await waitFor(() => expect(renameThread).toHaveBeenCalledWith(101, 'what is fire?'));
+  expect(screen.getByRole('button', { name: /^what is fire\?$/i })).toBeInTheDocument();
 });

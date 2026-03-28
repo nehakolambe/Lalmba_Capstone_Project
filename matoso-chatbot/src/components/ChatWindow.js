@@ -114,19 +114,27 @@ function sortThreads(list) {
   });
 }
 
-function ChatWindow({ user, onLogout }) {
+function buildRecoveredThreadTitle(history = []) {
+  const firstUserMessage = history.find(entry => entry.role === 'user' && entry.content?.trim());
+  if (!firstUserMessage) return '';
+  const cleaned = firstUserMessage.content.trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  return cleaned.length <= 255 ? cleaned : cleaned.slice(0, 255).trim();
+}
+
+function activeThreadStorageKey(userId) {
+  return userId ? `activeThreadId:${userId}` : 'activeThreadId';
+}
+
+function ChatWindow({ user, onLogout, onEditProfile }) {
   const displayName = useMemo(() => (user?.username || 'Guest').trim() || 'Guest', [user]);
+  const welcomeName = useMemo(
+    () => (user?.full_name || user?.username || 'Guest').trim() || 'Guest',
+    [user]
+  );
   const initials = displayName.charAt(0).toUpperCase();
 
-  const defaultWelcome = useMemo(
-    () => ({
-      role: 'assistant',
-      content: `Hello ${displayName}! Mama Akinyi is here to help. How can I assist you today?`
-    }),
-    [displayName]
-  );
-
-  const [messages, setMessages]               = useState([defaultWelcome]);
+  const [messages, setMessages]               = useState([]);
   const [threads, setThreads]                 = useState([]);
   const [activeThreadId, setActiveThreadId]   = useState(null);
   const [input, setInput]                     = useState('');
@@ -174,6 +182,15 @@ function ChatWindow({ user, onLogout }) {
   }, [darkMode]);
 
   useEffect(() => {
+    const storageKey = activeThreadStorageKey(user?.id);
+    if (activeThreadId) {
+      localStorage.setItem(storageKey, String(activeThreadId));
+      return;
+    }
+    localStorage.removeItem(storageKey);
+  }, [activeThreadId, user?.id]);
+
+  useEffect(() => {
     let mounted = true;
     async function loadThreadsForUser() {
       setLoadingThreads(true);
@@ -182,9 +199,13 @@ function ChatWindow({ user, onLogout }) {
         const loadedThreads = sortThreads(await fetchThreads());
         if (!mounted) return;
         setThreads(loadedThreads);
+        const savedActiveId = Number(localStorage.getItem(activeThreadStorageKey(user?.id)));
         setActiveThreadId(prevActiveId => {
           if (prevActiveId && loadedThreads.some(thread => thread.id === prevActiveId)) {
             return prevActiveId;
+          }
+          if (savedActiveId && loadedThreads.some(thread => thread.id === savedActiveId)) {
+            return savedActiveId;
           }
           return loadedThreads[0]?.id ?? null;
         });
@@ -196,7 +217,7 @@ function ChatWindow({ user, onLogout }) {
         }
         setThreads([]);
         setActiveThreadId(null);
-        setMessages([defaultWelcome]);
+        setMessages([]);
         setError('Unable to load your chats right now. Please try again.');
       } finally {
         if (mounted) setLoadingThreads(false);
@@ -204,14 +225,14 @@ function ChatWindow({ user, onLogout }) {
     }
     loadThreadsForUser();
     return () => { mounted = false; };
-  }, [defaultWelcome, onLogout, user?.id]);
+  }, [onLogout, user?.id]);
 
   useEffect(() => {
     let mounted = true;
 
     if (!activeThreadId) {
       setLoading(false);
-      setMessages([defaultWelcome]);
+      setMessages([]);
       setSession({
         question_count: 0,
         question_limit: 10,
@@ -227,6 +248,19 @@ function ChatWindow({ user, onLogout }) {
       try {
         const historyResponse = await fetchHistory(activeThreadId);
         if (!mounted) return;
+        let resolvedThread = historyResponse.thread || null;
+        const recoveredTitle =
+          resolvedThread?.title === 'New chat'
+            ? buildRecoveredThreadTitle(historyResponse.history || [])
+            : '';
+        if (resolvedThread?.id && recoveredTitle) {
+          try {
+            resolvedThread = await renameThread(resolvedThread.id, recoveredTitle);
+            upsertThread(resolvedThread);
+          } catch {
+            // Keep the loaded thread if auto-recovery fails.
+          }
+        }
         const parsedHistory = (historyResponse.history || [])
           .map(entry => ({
             id: entry.id,
@@ -235,15 +269,18 @@ function ChatWindow({ user, onLogout }) {
             createdAt: entry.created_at
           }))
           .filter(item => item.content && item.content.trim().length > 0);
-        setMessages(parsedHistory.length ? parsedHistory : [defaultWelcome]);
+        setMessages(parsedHistory);
         setSession(prev => ({ ...prev, ...(historyResponse.session || {}) }));
+        if (resolvedThread) {
+          upsertThread(resolvedThread);
+        }
       } catch (err) {
         if (!mounted) return;
         if (err?.status === 401 && typeof onLogout === 'function') {
           onLogout();
           return;
         }
-        setMessages([defaultWelcome]);
+        setMessages([]);
         setError('Unable to load this chat. You can still start a new conversation.');
       } finally {
         if (mounted) setLoading(false);
@@ -252,7 +289,7 @@ function ChatWindow({ user, onLogout }) {
 
     loadThreadData();
     return () => { mounted = false; };
-  }, [activeThreadId, defaultWelcome, onLogout]);
+  }, [activeThreadId, onLogout]);
 
   function upsertThread(thread) {
     if (!thread) return;
@@ -271,7 +308,7 @@ function ChatWindow({ user, onLogout }) {
       const thread = await createThread();
       upsertThread(thread);
       setActiveThreadId(thread.id);
-      setMessages([defaultWelcome]);
+      setMessages([]);
       setInput('');
     } catch (err) {
       if (err?.status === 401 && typeof onLogout === 'function') {
@@ -425,7 +462,7 @@ function ChatWindow({ user, onLogout }) {
     try {
       const response = await resetChat(activeThreadId);
       upsertThread(response.thread);
-      setMessages([defaultWelcome]);
+      setMessages([]);
       setSession({
         question_count: 0,
         question_limit: 10,
@@ -589,6 +626,13 @@ function ChatWindow({ user, onLogout }) {
             >
               Reset Session
             </button>
+            <button
+              className={`ghost-btn ${darkMode ? 'dark' : 'light'}`}
+              onClick={onEditProfile}
+              disabled={sending || typeof onEditProfile !== 'function'}
+            >
+              Questionnaire
+            </button>
             <button className={`ghost-btn ${darkMode ? 'dark' : 'light'}`} onClick={onLogout} disabled={sending}>
               Logout
             </button>
@@ -636,6 +680,12 @@ function ChatWindow({ user, onLogout }) {
 
           <div className="chat-main-panel">
             <div className="chatgpt-messages">
+              {!loading && messages.length === 0 && (
+                <div className={`chat-empty-state ${darkMode ? 'dark' : 'light'}`}>
+                  <h2>{`Hello ${welcomeName}`}</h2>
+                  <p>What do you want to learn today?</p>
+                </div>
+              )}
               {messages.map((m, idx) => {
                 const isAi = m.role === 'assistant';
                 const hideEmptyStreamingPlaceholder =

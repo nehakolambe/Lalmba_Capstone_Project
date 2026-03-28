@@ -2,19 +2,16 @@ from __future__ import annotations
 
 import logging
 import re
-import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from flask import Flask
-from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
 from .app_manifest import AppManifestEntry, load_app_manifest
 from .embeddings import EmbeddingModel, encode_sentences, load_embedding_model
 
 logger = logging.getLogger(__name__)
-_STOPWORDS = frozenset(ENGLISH_STOP_WORDS)
 _LEXICAL_WEIGHT = 0.3
 _PRIORITY_TOKEN_WEIGHT = 0.3
 
@@ -200,14 +197,12 @@ def build_semantic_profile(entry: AppManifestEntry) -> str:
 
 
 def normalize_query_text(text: str) -> str:
-    """Normalize a user query and remove stopwords before embedding."""
-    return " ".join(
-        token for token in _normalize_tokens(text) if token not in _STOPWORDS
-    )
+    """Normalize a user query with language-neutral token cleanup."""
+    return " ".join(_normalize_tokens(text))
 
 
 def normalize_profile_text(text: str) -> str:
-    """Normalize semantic profile text without removing stopwords."""
+    """Normalize semantic profile text without language-specific reduction."""
     return " ".join(_normalize_tokens(text))
 
 
@@ -266,39 +261,12 @@ def combine_app_scores(semantic_score: float, lexical_score: float) -> float:
 
 
 def _normalize_tokens(text: str) -> list[str]:
-    """Normalize text to stable token forms for semantic matching."""
-    ascii_text = unicodedata.normalize("NFKD", (text or "").lower()).encode(
-        "ascii", "ignore"
-    ).decode("ascii")
-    collapsed = re.sub(r"[^a-z0-9]+", " ", ascii_text)
-    tokens = [token for token in collapsed.split() if token]
-    return [_reduce_token(token) for token in tokens if _reduce_token(token)]
-
-
-def _reduce_token(token: str) -> str:
-    if len(token) <= 3:
-        return token
-    if token.endswith("'s"):
-        return token[:-2]
-    if len(token) > 5 and token.endswith("ies"):
-        return token[:-3] + "y"
-    if len(token) > 5 and token.endswith("ing"):
-        return _trim_doubled_tail(token[:-3])
-    if len(token) > 4 and token.endswith("ed"):
-        return _trim_doubled_tail(token[:-2])
-    if len(token) > 4 and token.endswith("es") and not token.endswith(("ses", "xes", "zes")):
-        return token[:-1]
-    if len(token) > 4 and token.endswith("s") and not token.endswith("ss"):
-        return token[:-1]
-    return token
-
-
-def _trim_doubled_tail(token: str) -> str:
-    if len(token) >= 2 and token[-1] == token[-2]:
-        return token[:-1]
-    return token
+    """Normalize text to stable token forms while preserving multilingual text."""
+    normalized_text = (text or "").casefold()
+    collapsed = re.sub(r"[^\w]+", " ", normalized_text, flags=re.UNICODE)
+    return [token for token in collapsed.split() if token]
 
 
 def _content_token_set(text: str) -> frozenset[str]:
-    """Keep only normalized non-stopword tokens for lexical matching."""
-    return frozenset(token for token in _normalize_tokens(text) if token not in _STOPWORDS)
+    """Keep normalized tokens for lightweight lexical matching."""
+    return frozenset(_normalize_tokens(text))

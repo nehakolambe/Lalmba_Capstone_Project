@@ -79,7 +79,23 @@
   outline: none;
 }
 
+.login-form select {
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  border: 1.5px solid #b2dfdb;
+  background: #f0f9f0;
+  color: #222;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease;
+  outline: none;
+}
+
 .login-form input:focus {
+  border-color: #228B22;
+  background: #ffffff;
+}
+
+.login-form select:focus {
   border-color: #228B22;
   background: #ffffff;
 }
@@ -154,6 +170,30 @@
 
 .link-button:disabled { color: #aaa; cursor: not-allowed; text-decoration: none; }
 .link-button:hover    { color: #e07b00; }
+
+.questionnaire-form {
+  width: min(460px, 100%);
+}
+
+.questionnaire-intro {
+  margin: -0.5rem 0 0.25rem;
+  color: #5b5b5b;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.questionnaire-back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.4rem;
+  color: #228B22;
+  padding: 0;
+  margin-bottom: -8px;
+  line-height: 1;
+}
 
 /* ══════════════════════════════════════
    APP WRAPPER
@@ -649,6 +689,28 @@
 
 .chatgpt-body.light .chatgpt-messages { background: #f9f9f9; }
 .chatgpt-body.dark  .chatgpt-messages { background: #1b2438; }
+
+.chat-empty-state {
+  margin: auto 0;
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.chat-empty-state h2 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.chat-empty-state p {
+  margin: 10px 0 0;
+  font-size: 1.05rem;
+}
+
+.chat-empty-state.light h2 { color: #1f4f2b; }
+.chat-empty-state.light p { color: #4d5e53; }
+.chat-empty-state.dark h2 { color: #f3f7ff; }
+.chat-empty-state.dark p { color: #c6d0df; }
 
 .message-row {
   display: flex; align-items: flex-end;

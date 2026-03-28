@@ -36,7 +36,10 @@ class Config:
         "APP_MANIFEST_PATH",
         str(BASE_DIR / "data" / "app_manifest.json"),
     )
-    APP_EMBEDDING_MODEL = os.getenv("APP_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    APP_EMBEDDING_MODEL = os.getenv(
+        "APP_EMBEDDING_MODEL",
+        "paraphrase-multilingual-MiniLM-L12-v2",
+    )
     try:
         APP_MATCH_THRESHOLD = float(os.getenv("APP_MATCH_THRESHOLD", "0.35"))
     except ValueError:

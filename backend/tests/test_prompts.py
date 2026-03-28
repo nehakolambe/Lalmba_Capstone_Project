@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from backend.services.chat_memory import RetrievedMemory
 from backend.services.conversation_state import CompletedTurn
-from backend.services.prompts import SYSTEM_PROMPT, MatchedAppContext, build_user_prompt
+from backend.services.prompts import (
+    SYSTEM_PROMPT,
+    MatchedAppContext,
+    UserProfileContext,
+    build_user_prompt,
+)
 
 
 def test_build_user_prompt_without_background():
@@ -15,11 +20,50 @@ def test_build_user_prompt_without_background():
     assert "### CONTEXT" in prompt
     assert "- first_turn: true" in prompt
     assert "- user_name: Test User" in prompt
+    assert "### USER PROFILE" not in prompt
     assert "### RELEVANT BACKGROUND" not in prompt
     assert "### RECENT CONVERSATION" in prompt
     assert "(none)" in prompt
     assert "### CURRENT USER QUERY" in prompt
     assert "How are you?" in prompt
+
+
+def test_build_user_prompt_with_user_profile():
+    prompt = build_user_prompt(
+        "Explain fractions",
+        user_name="Test User",
+        user_profile=UserProfileContext(
+            age_group="teen",
+            education_level="class_7",
+            preferred_language="english",
+            english_fluency="need_help",
+            computer_literacy="can_do_some",
+        ),
+    )
+
+    assert "### USER PROFILE" in prompt
+    assert "- age_group: teen" in prompt
+    assert "- education_level: class_7" in prompt
+    assert "- preferred_language: english" in prompt
+    assert "- english_fluency: need_help" in prompt
+    assert "- computer_literacy: can_do_some" in prompt
+
+
+def test_build_user_prompt_omits_english_fluency_for_kiswahili_profile():
+    prompt = build_user_prompt(
+        "Nisaidie",
+        user_name="Test User",
+        user_profile=UserProfileContext(
+            age_group="adult",
+            education_level="adult",
+            preferred_language="kiswahili",
+            english_fluency=None,
+            computer_literacy="need_help",
+        ),
+    )
+
+    assert "- preferred_language: kiswahili" in prompt
+    assert "english_fluency" not in prompt
 
 
 def test_build_user_prompt_with_app_context_and_memory():
@@ -70,12 +114,7 @@ def test_build_user_prompt_with_conversation_summary():
     assert "The learner is practicing addition" in prompt
 
 
-def test_system_prompt_keeps_neutral_low_resource_guidance():
-    assert "practical learning and support assistant" in SYSTEM_PROMPT
-    assert "Use simple English only." in SYSTEM_PROMPT
-    assert "Act like a patient tutor." in SYSTEM_PROMPT
-    assert "Prefer low-cost, low-tech, practical suggestions." in SYSTEM_PROMPT
-    assert 'end with a short section titled "Related app"' in SYSTEM_PROMPT
-    assert "Do not invent, substitute, or recommend any outside app, website, platform, or service." in SYSTEM_PROMPT
-    assert "If no app context is provided, do not mention any app, website, software, or external learning platform at all." in SYSTEM_PROMPT
-    assert "Do not ask the user to choose between learning modes." in SYSTEM_PROMPT
+def test_system_prompt_keeps_profile_guidance():
+    assert "practical learning assistant" in SYSTEM_PROMPT
+    assert "Reply in the user's preferred language by default." in SYSTEM_PROMPT
+    assert "age group, education level, English fluency, and computer literacy" in SYSTEM_PROMPT

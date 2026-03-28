@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha1
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -268,11 +270,15 @@ def initialize_chat_memory(app: Flask) -> ChatMemoryService | None:
         app.extensions["chat_memory"] = None
         return None
 
+    model_name = app.config["CHAT_MEMORY_EMBEDDING_MODEL"] or app.config["APP_EMBEDDING_MODEL"]
+    collection_name = _versioned_collection_name(
+        app.config["CHAT_MEMORY_COLLECTION_NAME"],
+        model_name,
+    )
     collection = _create_chroma_collection(
         app.config["CHAT_MEMORY_PERSIST_DIR"],
-        app.config["CHAT_MEMORY_COLLECTION_NAME"],
+        collection_name,
     )
-    model_name = app.config["CHAT_MEMORY_EMBEDDING_MODEL"] or app.config["APP_EMBEDDING_MODEL"]
     service = ChatMemoryService(
         model=load_embedding_model(model_name),
         collection=collection,
@@ -284,7 +290,7 @@ def initialize_chat_memory(app: Flask) -> ChatMemoryService | None:
     app.extensions["chat_memory"] = service
     logger.info(
         "Chat memory initialized collection=%s model=%s persist_dir=%s",
-        app.config["CHAT_MEMORY_COLLECTION_NAME"],
+        collection_name,
         model_name,
         Path(app.config["CHAT_MEMORY_PERSIST_DIR"]),
     )
@@ -309,3 +315,15 @@ def _create_chroma_collection(persist_dir: str, collection_name: str) -> ChromaC
         name=collection_name,
         metadata={"hnsw:space": "cosine"},
     )
+
+
+def _versioned_collection_name(base_name: str, model_name: str) -> str:
+    """Separate persisted memories by embedding model to avoid mixed vector spaces."""
+    normalized_base = re.sub(r"[^a-z0-9_-]+", "-", (base_name or "chat_memory").casefold()).strip("-")
+    normalized_base = normalized_base or "chat_memory"
+    model_slug = re.sub(r"[^a-z0-9_-]+", "-", (model_name or "default").casefold()).strip("-")
+    model_slug = model_slug or "default"
+    digest = sha1(model_name.encode("utf-8")).hexdigest()[:8]
+    suffix = f"{model_slug[:24]}-{digest}"
+    max_base_length = max(1, 63 - len(suffix) - 1)
+    return f"{normalized_base[:max_base_length]}-{suffix}"

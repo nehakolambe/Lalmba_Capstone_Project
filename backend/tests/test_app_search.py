@@ -167,6 +167,23 @@ def test_build_app_index_uses_lexical_boost_for_short_topic_question():
     assert match.score >= 0.35
 
 
+def test_build_app_index_supports_swahili_query_with_multilingual_embeddings():
+    manifest_entries = load_app_manifest(MANIFEST_PATH)
+    dimensions = len(manifest_entries)
+    tux_typing = _entry_by_app_id(manifest_entries, "tux_typing")
+    model_mapping = _one_hot_manifest_mapping(manifest_entries, dimensions)
+    model_mapping[normalize_query_text("programu ya kujifunza kuchapa")] = model_mapping[
+        build_semantic_profile(tux_typing)
+    ]
+    model = FakeEmbeddingModel(model_mapping)
+
+    index = build_app_index(manifest_entries, model, model_name="fake-multilingual-model")
+    match = index.search("programu ya kujifunza kuchapa", model, threshold=0.35)
+
+    assert match is not None
+    assert match.app.app_id == "tux_typing"
+
+
 def test_build_app_index_still_returns_none_for_unrelated_query_with_no_overlap():
     manifest_entries = load_app_manifest(MANIFEST_PATH)
     dimensions = len(manifest_entries)
@@ -313,15 +330,16 @@ def test_build_app_index_matches_direct_and_indirect_queries(query, expected_app
     assert match.app.app_id == expected_app_id
 
 
-def test_normalize_query_text_removes_stopwords_and_keeps_meaningful_terms():
-    assert normalize_query_text("  I want to learn MATHS!! ") == "want learn math"
-    assert normalize_query_text("Can you help me with keyboard practice") == "help keyboard practice"
-    assert normalize_query_text("My child wants to make pictures") == "child want make picture"
-    assert normalize_query_text("what does plants eat?") == "does plant eat"
+def test_normalize_query_text_keeps_multilingual_terms_without_english_stemming():
+    assert normalize_query_text("  I want to learn MATHS!! ") == "i want to learn maths"
+    assert normalize_query_text("Can you help me with keyboard practice") == "can you help me with keyboard practice"
+    assert normalize_query_text("My child wants to make pictures") == "my child wants to make pictures"
+    assert normalize_query_text("Ninataka kujifunza kuchapa") == "ninataka kujifunza kuchapa"
 
 
-def test_normalize_profile_text_keeps_richer_semantic_context():
-    assert normalize_profile_text("A simple drawing app for kids") == "a simple draw app for kids"
+def test_normalize_profile_text_preserves_unicode_for_semantic_context():
+    assert normalize_profile_text("A simple drawing app for kids") == "a simple drawing app for kids"
+    assert normalize_profile_text("Kiswahili kwa watoto") == "kiswahili kwa watoto"
 
 
 def test_build_semantic_profile_includes_optional_fields():
@@ -345,7 +363,7 @@ def test_build_semantic_profile_includes_new_app_aliases_and_tags():
 
 
 def test_query_token_set_returns_unique_normalized_query_terms():
-    assert query_token_set("what does plants eat?") == frozenset({"does", "plant", "eat"})
+    assert query_token_set("what does plants eat?") == frozenset({"what", "does", "plants", "eat"})
 
 
 def test_compute_lexical_overlap_score_rewards_token_overlap_and_priority_terms():

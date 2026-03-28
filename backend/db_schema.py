@@ -25,6 +25,11 @@ def ensure_schema() -> None:
     _ensure_column("users", "full_name", "TEXT")
     _ensure_column("users", "pin_hash", "TEXT")
     _ensure_column("users", "details", "TEXT")
+    _ensure_column("users", "age_group", "TEXT")
+    _ensure_column("users", "education_level", "TEXT")
+    _ensure_column("users", "preferred_language", "TEXT")
+    _ensure_column("users", "english_fluency", "TEXT")
+    _ensure_column("users", "computer_literacy", "TEXT")
     _ensure_column("users", "created_at", "DATETIME")
 
     if not inspector.has_table("messages"):

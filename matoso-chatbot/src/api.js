@@ -77,12 +77,25 @@ export async function logout() {
   try { await request('/auth/logout', { method: 'POST' }); } catch {}
 }
 
-export async function registerUser({ fullName, username, pin, details }) {
+export async function registerUser({ fullName, username, pin }) {
   const data = await request('/auth/register', {
     method: 'POST',
-    body: { fullName, username, pin, details }
+    body: { fullName, username, pin }
   });
   return data.user;
+}
+
+export async function fetchProfile() {
+  const data = await request('/auth/profile');
+  return data.profile || data.user || null;
+}
+
+export async function updateProfile(profile) {
+  const data = await request('/auth/profile', {
+    method: 'PATCH',
+    body: profile
+  });
+  return data.user || data.profile;
 }
 
 export async function fetchThreads() {

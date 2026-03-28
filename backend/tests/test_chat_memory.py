@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from backend.services.chat_memory import ChatMemoryBuffer, ChatMemoryService
+from backend import create_app
+from backend.config import TestConfig
+from backend.services.chat_memory import (
+    ChatMemoryBuffer,
+    ChatMemoryService,
+    _versioned_collection_name,
+)
 from backend.services.conversation_state import CompletedTurn
 
 
@@ -176,3 +182,51 @@ def test_chat_memory_clear_thread_removes_only_selected_thread_memory():
     assert service.read_recent_turns(4, 3) != []
     assert collection.get(where={"user_id": "4", "thread_id": "2"}, include=[])["ids"] == []
     assert collection.get(where={"user_id": "4", "thread_id": "3"}, include=[])["ids"] != []
+
+
+def test_versioned_collection_name_changes_when_model_changes():
+    english_collection = _versioned_collection_name("chat_memory", "all-MiniLM-L6-v2")
+    multilingual_collection = _versioned_collection_name(
+        "chat_memory",
+        "paraphrase-multilingual-MiniLM-L12-v2",
+    )
+
+    assert english_collection != multilingual_collection
+    assert english_collection.startswith("chat_memory-")
+    assert multilingual_collection.startswith("chat_memory-")
+
+
+def test_startup_uses_model_specific_chat_memory_collection_name(monkeypatch, tmp_path):
+    captured = {}
+    fake_collection = FakeCollection()
+
+    monkeypatch.setattr(
+        "backend.services.chat_memory.load_embedding_model",
+        lambda _model_name: FakeEmbeddingModel({}),
+    )
+
+    def fake_create_chroma_collection(persist_dir, collection_name):
+        captured["persist_dir"] = persist_dir
+        captured["collection_name"] = collection_name
+        return fake_collection
+
+    monkeypatch.setattr(
+        "backend.services.chat_memory._create_chroma_collection",
+        fake_create_chroma_collection,
+    )
+
+    class ChatMemoryConfig(TestConfig):
+        CHAT_MEMORY_ENABLED = True
+        CHAT_MEMORY_PERSIST_DIR = str(tmp_path / "chat-memory")
+        CHAT_MEMORY_COLLECTION_NAME = "chat_memory"
+        APP_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+
+    app = create_app(ChatMemoryConfig)
+
+    with app.app_context():
+        assert captured["persist_dir"] == str(tmp_path / "chat-memory")
+        assert captured["collection_name"] == _versioned_collection_name(
+            "chat_memory",
+            "paraphrase-multilingual-MiniLM-L12-v2",
+        )
+        assert app.extensions["chat_memory"].collection is fake_collection
