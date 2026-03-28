@@ -8,7 +8,7 @@ from flask import current_app, has_app_context
 from .chat_memory import RetrievedMemory
 from .conversation_state import CompletedTurn
 from .llama_cpp_client import LlamaCppError, generate_response, generate_response_stream
-from .prompts import SYSTEM_PROMPT, MatchedAppContext, build_user_prompt
+from .prompts import SYSTEM_PROMPT, MatchedAppContext, UserProfileContext, build_user_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 def generate_assistant_reply(
     user_text: str,
     user_name: str | None = None,
+    user_profile: UserProfileContext | None = None,
     is_first_turn: bool = False,
     conversation_summary: str | None = None,
     matched_app: MatchedAppContext | None = None,
@@ -34,6 +35,7 @@ def generate_assistant_reply(
     user_prompt = _prepare_user_prompt(
         cleaned,
         user_name=user_name,
+        user_profile=user_profile,
         is_first_turn=is_first_turn,
         conversation_summary=conversation_summary,
         matched_app=matched_app,
@@ -65,6 +67,7 @@ def generate_assistant_reply(
 def stream_assistant_reply(
     user_text: str,
     user_name: str | None = None,
+    user_profile: UserProfileContext | None = None,
     is_first_turn: bool = False,
     conversation_summary: str | None = None,
     matched_app: MatchedAppContext | None = None,
@@ -83,6 +86,7 @@ def stream_assistant_reply(
     user_prompt = _prepare_user_prompt(
         cleaned,
         user_name=user_name,
+        user_profile=user_profile,
         is_first_turn=is_first_turn,
         conversation_summary=conversation_summary,
         matched_app=matched_app,
@@ -112,6 +116,7 @@ def _prepare_user_prompt(
     user_text: str,
     *,
     user_name: str | None = None,
+    user_profile: UserProfileContext | None = None,
     is_first_turn: bool = False,
     conversation_summary: str | None = None,
     matched_app: MatchedAppContext | None = None,
@@ -127,6 +132,7 @@ def _prepare_user_prompt(
     user_prompt = build_user_prompt(
         cleaned,
         user_name=user_name,
+        user_profile=user_profile,
         is_first_turn=is_first_turn,
         conversation_summary=conversation_summary,
         matched_app=matched_app,

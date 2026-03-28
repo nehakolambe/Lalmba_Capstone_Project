@@ -12,3 +12,16 @@ test('renders login form heading after session check', async () => {
   });
   expect(heading).toBeInTheDocument();
 });
+
+test('routes incomplete session users to the questionnaire', async () => {
+  api.fetchSession.mockResolvedValue({
+    id: 1,
+    username: 'alice',
+    full_name: 'Alice',
+    profile_complete: false
+  });
+
+  render(<App />);
+
+  expect(await screen.findByRole('heading', { name: /tell us about yourself/i })).toBeInTheDocument();
+});

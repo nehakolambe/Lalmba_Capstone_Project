@@ -2,18 +2,20 @@ import React, { useState, useEffect } from "react";
 import LandingPage from "./components/LandingPage";
 import Login from "./components/Login";
 import ChatWindow from "./components/ChatWindow";
-import { fetchSession, login, registerUser } from "./api";
+import Questionnaire from "./components/Questionnaire";
+import { fetchProfile, fetchSession, login, registerUser, updateProfile } from "./api";
 import "./App.css";
 
 function App() {
   const [page, setPage] = useState("landing");
   const [user, setUser] = useState(null);
+  const [questionnaireMode, setQuestionnaireMode] = useState("onboarding");
 
   useEffect(() => {
     fetchSession().then((sessionUser) => {
       if (sessionUser) {
         setUser(sessionUser);
-        setPage("chat");
+        setPage(sessionUser.profile_complete ? "chat" : "questionnaire");
       }
     });
   }, []);
@@ -22,7 +24,8 @@ function App() {
     try {
       const sessionUser = await login(username, pin);
       setUser(sessionUser);
-      setPage("chat");
+      setQuestionnaireMode("onboarding");
+      setPage(sessionUser.profile_complete ? "chat" : "questionnaire");
       return { success: true };
     } catch (err) {
       return {
@@ -32,11 +35,12 @@ function App() {
     }
   }
 
-  async function handleRegister({ fullName, username, pin, details }) {
+  async function handleRegister({ fullName, username, pin }) {
     try {
-      const sessionUser = await registerUser({ fullName, username, pin, details });
+      const sessionUser = await registerUser({ fullName, username, pin });
       setUser(sessionUser);
-      setPage("chat");
+      setQuestionnaireMode("onboarding");
+      setPage(sessionUser.profile_complete ? "chat" : "questionnaire");
       return { success: true };
     } catch (err) {
       return {
@@ -44,6 +48,26 @@ function App() {
         message: err.message || "Registration failed. Please try again.",
       };
     }
+  }
+
+  async function handleSaveProfile(profile) {
+    const updatedUser = await updateProfile(profile);
+    setUser(updatedUser);
+    setPage("chat");
+    setQuestionnaireMode("edit");
+    return updatedUser;
+  }
+
+  async function handleOpenQuestionnaire() {
+    if (!user) return;
+    try {
+      const profile = await fetchProfile();
+      if (profile) {
+        setUser(profile);
+      }
+    } catch {}
+    setQuestionnaireMode("edit");
+    setPage("questionnaire");
   }
 
   return (
@@ -76,10 +100,21 @@ function App() {
       {page === "chat" && (
         <ChatWindow
           user={user}
+          onEditProfile={handleOpenQuestionnaire}
           onLogout={() => {
             setUser(null);
             setPage("landing");
           }}
+        />
+      )}
+
+      {page === "questionnaire" && (
+        <Questionnaire
+          user={user}
+          initialProfile={user}
+          isEditing={questionnaireMode === "edit"}
+          onSave={handleSaveProfile}
+          onBack={questionnaireMode === "edit" ? () => setPage("chat") : undefined}
         />
       )}
     </div>

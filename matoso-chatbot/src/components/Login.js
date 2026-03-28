@@ -6,7 +6,6 @@ function Login({ onLogin, onRegister, initialMode = 'login', onBack }) {
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
   const [fullName, setFullName] = useState('');
-  const [details, setDetails] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -43,14 +42,13 @@ function Login({ onLogin, onRegister, initialMode = 'login', onBack }) {
           surfaceError('Registration is currently unavailable.');
           return;
         }
-        const result = await onRegister({ fullName, username, pin, details });
+        const result = await onRegister({ fullName, username, pin });
         if (!result || !result.success) {
           surfaceError(result?.message || 'Unable to register. Please try again.', result?.details);
         } else {
           setFeedback('Account created! Logging you in...');
           setPin('');
           setFullName('');
-          setDetails('');
         }
       }
     } catch (err) {
@@ -134,19 +132,6 @@ function Login({ onLogin, onRegister, initialMode = 'login', onBack }) {
           minLength={mode === 'register' ? 4 : undefined}
         />
       </label>
-
-      {mode === 'register' && (
-        <label>
-          Additional details:
-          <textarea
-            value={details}
-            onChange={e => setDetails(e.target.value)}
-            disabled={submitting}
-            rows={3}
-            placeholder="Share anything that helps us support you."
-          />
-        </label>
-      )}
 
       {error && <p className="login-error">{error}</p>}
       {feedback && <p className="login-feedback">{feedback}</p>}

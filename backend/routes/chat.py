@@ -23,7 +23,7 @@ from ..services.conversation_state import (
     summary_overlap_turns,
 )
 from ..services.llama_cpp_client import LlamaCppError
-from ..services.prompts import MatchedAppContext
+from ..services.prompts import MatchedAppContext, UserProfileContext
 from ..services.chat_threads import (
     build_auto_thread_title,
     create_thread,
@@ -37,6 +37,18 @@ from ..utils import error_response, login_required
 from . import chat_bp
 
 logger = logging.getLogger(__name__)
+
+
+def _build_user_profile_context(user) -> UserProfileContext | None:
+    if not getattr(user, "profile_complete", False):
+        return None
+    return UserProfileContext(
+        age_group=user.age_group,
+        education_level=user.education_level,
+        preferred_language=user.preferred_language,
+        english_fluency=user.english_fluency,
+        computer_literacy=user.computer_literacy,
+    )
 
 
 @chat_bp.get("/chat/history")
@@ -138,6 +150,7 @@ def chat_message(user):
         reply_text = generate_assistant_reply(
             message_text,
             user_name=user.full_name,
+            user_profile=_build_user_profile_context(user),
             is_first_turn=context["is_first_turn"],
             conversation_summary=context["conversation"].current_summary,
             matched_app=context["surfaced_app"],
@@ -183,6 +196,7 @@ def chat_message_stream(user):
     stream = stream_assistant_reply(
         message_text,
         user_name=user.full_name,
+        user_profile=_build_user_profile_context(user),
         is_first_turn=context["is_first_turn"],
         conversation_summary=context["conversation"].current_summary,
         matched_app=context["surfaced_app"],

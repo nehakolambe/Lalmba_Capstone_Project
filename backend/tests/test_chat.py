@@ -50,6 +50,13 @@ class FakeAppIndex:
         self.entries = tuple(entries)
 
 
+def _stub_auto_title(monkeypatch, title="Topic"):
+    monkeypatch.setattr(
+        "backend.routes.chat.build_auto_thread_title",
+        lambda _message_text: title,
+    )
+
+
 def test_chat_requires_authentication(client):
     response = client.post("/chat/message", json={"text": "Hello"})
     data = response.get_json()
@@ -72,6 +79,7 @@ def test_chat_message_history_and_reset(client, app, registered_user_payload, mo
     fake_memory = FakeChatMemory(retrieval=None)
     app.extensions["chat_memory"] = fake_memory
 
+    _stub_auto_title(monkeypatch, title="How are you")
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         "backend.routes.chat.generate_assistant_reply",
@@ -83,6 +91,7 @@ def test_chat_message_history_and_reset(client, app, registered_user_payload, mo
 
     assert message_response.status_code == 201
     assert len(message_data["messages"]) == 2
+    assert message_data["thread"]["title"] == "How are you"
     assert message_data["session"]["question_count"] == 1
     assert message_data["session"]["questions_remaining"] == 9
     assert fake_memory.archived == [(1, 1, "How are you?", "Mocked assistant reply")]
@@ -106,10 +115,91 @@ def test_chat_message_history_and_reset(client, app, registered_user_payload, mo
     assert post_reset_data["session"]["question_count"] == 0
 
 
+def test_chat_first_question_auto_generates_short_thread_title(
+    client, app, registered_user_payload, monkeypatch
+):
+    _register_and_login(client, registered_user_payload)
+
+    fake_memory = FakeChatMemory(retrieval=None)
+    app.extensions["chat_memory"] = fake_memory
+
+    _stub_auto_title(monkeypatch, title="What is fire?")
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "backend.routes.chat.generate_assistant_reply",
+        lambda *_args, **_kwargs: "Fire is heat, light, and gases from burning.",
+    )
+
+    response = client.post("/chat/message", json={"text": "What is fire?"})
+    data = response.get_json()
+
+    assert response.status_code == 201
+    assert data["thread"]["title"] == "What is fire?"
+
+    threads_response = client.get("/chat/threads")
+    threads_data = threads_response.get_json()
+    assert threads_response.status_code == 200
+    assert threads_data["threads"][0]["title"] == "What is fire?"
+
+
+def test_chat_auto_title_runs_only_for_first_message(client, app, registered_user_payload, monkeypatch):
+    _register_and_login(client, registered_user_payload)
+
+    fake_memory = FakeChatMemory(retrieval=None)
+    app.extensions["chat_memory"] = fake_memory
+    title_calls = []
+
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+
+    def _fake_build_title(message_text):
+        title_calls.append(message_text)
+        return message_text
+
+    monkeypatch.setattr("backend.routes.chat.build_auto_thread_title", _fake_build_title)
+    monkeypatch.setattr(
+        "backend.routes.chat.generate_assistant_reply",
+        lambda *_args, **_kwargs: "Reply",
+    )
+
+    first = client.post("/chat/message", json={"text": "What is fire?"})
+    second = client.post("/chat/message", json={"text": "Why is it hot?"})
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert title_calls == ["What is fire?"]
+
+
+def test_chat_manual_rename_is_not_overwritten_by_later_messages(
+    client, app, registered_user_payload, monkeypatch
+):
+    _register_and_login(client, registered_user_payload)
+
+    fake_memory = FakeChatMemory(retrieval=None)
+    app.extensions["chat_memory"] = fake_memory
+
+    _stub_auto_title(monkeypatch, title="What is fire?")
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "backend.routes.chat.generate_assistant_reply",
+        lambda *_args, **_kwargs: "Reply",
+    )
+
+    first = client.post("/chat/message", json={"text": "What is fire?"})
+    thread_id = first.get_json()["thread"]["id"]
+    renamed = client.patch(f"/chat/threads/{thread_id}", json={"title": "Science notes"})
+    second = client.post("/chat/message", json={"thread_id": thread_id, "text": "Why is it hot?"})
+
+    assert first.status_code == 201
+    assert renamed.status_code == 200
+    assert second.status_code == 201
+    assert second.get_json()["thread"]["title"] == "Science notes"
+
+
 def test_chat_message_passes_app_context_without_blocking(client, app, registered_user_payload, monkeypatch):
     _register_and_login(client, registered_user_payload)
 
     app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
+    _stub_auto_title(monkeypatch)
     app_match = AppMatch(
         app=AppManifestEntry(
             app_id="tux_paint",
@@ -149,6 +239,7 @@ def test_chat_message_suppresses_repeated_same_app_suggestion(
     _register_and_login(client, registered_user_payload)
 
     app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
+    _stub_auto_title(monkeypatch)
     app_match = AppMatch(
         app=AppManifestEntry(
             app_id="tux_math",
@@ -161,6 +252,7 @@ def test_chat_message_suppresses_repeated_same_app_suggestion(
     captured = {}
 
     app.extensions["app_search_index"] = FakeAppIndex([app_match.app])
+    _stub_auto_title(monkeypatch)
 
     def _search(_app, query, **_kwargs):
         if "math" in query.lower():
@@ -192,6 +284,7 @@ def test_chat_message_allows_repeat_when_user_explicitly_asks_for_app(
     _register_and_login(client, registered_user_payload)
 
     app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
+    _stub_auto_title(monkeypatch)
     app_match = AppMatch(
         app=AppManifestEntry(
             app_id="tux_math",
@@ -270,6 +363,7 @@ def test_chat_message_falls_back_when_app_search_fails(client, app, registered_u
     _register_and_login(client, registered_user_payload)
 
     app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
+    _stub_auto_title(monkeypatch)
     captured = {}
 
     def _raise_search_error(*_args, **_kwargs):
@@ -316,6 +410,7 @@ def test_chat_message_passes_retrieved_memory_to_prompt_builder(
     app.extensions["chat_memory"] = fake_memory
     captured = {}
 
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
 
     def _fake_reply(message_text, **kwargs):
@@ -335,10 +430,44 @@ def test_chat_message_passes_retrieved_memory_to_prompt_builder(
     assert captured["kwargs"]["prompt_log"]["budget_matches"] == 1
 
 
+def test_chat_message_passes_user_profile_context(client, app, registered_user_payload, monkeypatch):
+    client.post("/auth/register", json=registered_user_payload)
+    client.patch(
+        "/auth/profile",
+        json={
+            "age_group": "teen",
+            "education_level": "class_8",
+            "preferred_language": "english",
+            "english_fluency": "beginner",
+            "computer_literacy": "beginner",
+        },
+    )
+
+    app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
+    captured = {}
+
+    _stub_auto_title(monkeypatch)
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+
+    def _fake_reply(message_text, **kwargs):
+        captured["kwargs"] = kwargs
+        return "Reply"
+
+    monkeypatch.setattr("backend.routes.chat.generate_assistant_reply", _fake_reply)
+
+    response = client.post("/chat/message", json={"text": "Teach me division"})
+
+    assert response.status_code == 201
+    assert captured["kwargs"]["user_profile"] is not None
+    assert captured["kwargs"]["user_profile"].education_level == "class_8"
+    assert captured["kwargs"]["user_profile"].english_fluency == "beginner"
+
+
 def test_chat_enforces_question_limit(client, app, registered_user_payload, monkeypatch):
     _register_and_login(client, registered_user_payload)
 
     app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         "backend.routes.chat.generate_assistant_reply",
@@ -369,6 +498,7 @@ def test_chat_message_returns_503_and_writes_no_memory_on_llm_failure(
     fake_memory = FakeChatMemory(retrieval=None)
     app.extensions["chat_memory"] = fake_memory
 
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
 
     def _raise_llm_error(*_args, **_kwargs):
@@ -393,6 +523,7 @@ def test_chat_message_rolls_back_archive_when_sql_commit_fails(
 
     fake_memory = FakeChatMemory(retrieval=None)
     app.extensions["chat_memory"] = fake_memory
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         "backend.routes.chat.generate_assistant_reply",
@@ -432,6 +563,7 @@ def test_chat_threads_do_not_share_memory_context(
         )
     )
     app.extensions["chat_memory"] = fake_memory
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         "backend.routes.chat.generate_assistant_reply",
@@ -462,6 +594,7 @@ def test_chat_updates_summary_after_summary_window(client, app, registered_user_
 
     app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
     app.config["CHAT_SUMMARY_WINDOW_TURNS"] = 2
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         "backend.routes.chat.generate_assistant_reply",
@@ -489,6 +622,7 @@ def test_chat_message_stream_emits_deltas_and_persists_exchange(
 
     fake_memory = FakeChatMemory(retrieval=None)
     app.extensions["chat_memory"] = fake_memory
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         "backend.routes.chat.stream_assistant_reply",
@@ -521,6 +655,7 @@ def test_chat_message_stream_returns_json_when_question_limit_reached(
     _register_and_login(client, registered_user_payload)
 
     app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         "backend.routes.chat.generate_assistant_reply",
@@ -548,6 +683,7 @@ def test_chat_message_stream_returns_503_before_first_chunk_on_llm_failure(
 
     fake_memory = FakeChatMemory(retrieval=None)
     app.extensions["chat_memory"] = fake_memory
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
 
     def _raise_stream_error(*_args, **_kwargs):
@@ -575,6 +711,7 @@ def test_chat_message_stream_emits_error_event_and_skips_persistence_on_midstrea
 
     fake_memory = FakeChatMemory(retrieval=None)
     app.extensions["chat_memory"] = fake_memory
+    _stub_auto_title(monkeypatch)
     monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
 
     def _failing_stream(*_args, **_kwargs):

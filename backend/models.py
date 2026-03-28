@@ -15,6 +15,11 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     pin_hash = db.Column(db.String(255), nullable=False)
     details = db.Column(db.Text, nullable=True)
+    age_group = db.Column(db.String(32), nullable=True)
+    education_level = db.Column(db.String(32), nullable=True)
+    preferred_language = db.Column(db.String(32), nullable=True)
+    english_fluency = db.Column(db.String(32), nullable=True)
+    computer_literacy = db.Column(db.String(32), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     messages = db.relationship(
@@ -41,12 +46,34 @@ class User(db.Model):
             return False
         return bcrypt.checkpw(raw_pin.encode("utf-8"), self.pin_hash.encode("utf-8"))
 
+    @property
+    def profile_complete(self) -> bool:
+        has_required_profile = all(
+            (
+                self.age_group,
+                self.education_level,
+                self.preferred_language,
+                self.computer_literacy,
+            )
+        )
+        if not has_required_profile:
+            return False
+        if self.preferred_language == "english":
+            return bool(self.english_fluency)
+        return True
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "full_name": self.full_name,
             "username": self.username,
             "details": self.details,
+            "age_group": self.age_group,
+            "education_level": self.education_level,
+            "preferred_language": self.preferred_language,
+            "english_fluency": self.english_fluency,
+            "computer_literacy": self.computer_literacy,
+            "profile_complete": self.profile_complete,
             "created_at": self.created_at.isoformat(),
         }
 
