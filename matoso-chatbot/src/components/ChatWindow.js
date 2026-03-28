@@ -8,11 +8,103 @@ import {
   fetchThreads,
   renameThread,
   resetChat,
-  sendMessage
+  sendMessageStream
 } from '../api';
 import logo from '../assets/logo.png';
 
 const MAX_INPUT_HEIGHT = 160;
+
+function repairMojibake(text) {
+  if (typeof text !== 'string' || !/[ÃÂâ]/.test(text)) {
+    return text;
+  }
+
+  const suspiciousCharCount = value => (value.match(/[ÃÂâ]/g) || []).length;
+
+  try {
+    const bytes = Uint8Array.from(Array.from(text, char => char.charCodeAt(0) & 0xff));
+    const repaired = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (!repaired.includes('\u0000') && suspiciousCharCount(repaired) < suspiciousCharCount(text)) {
+      return repaired;
+    }
+  } catch {
+    // Fall through to targeted replacements below.
+  }
+
+  return text
+    .replace(/â¯/g, ' ')
+    .replace(/Â°/g, '°')
+    .replace(/Â/g, '')
+    .replace(/â/g, "'")
+    .replace(/â/g, '"')
+    .replace(/â/g, '"')
+    .replace(/â/g, '–')
+    .replace(/â/g, '—');
+}
+
+function renderInlineFormatting(text) {
+  const parts = [];
+  const pattern = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(<strong key={`bold-${match.index}`}>{match[1]}</strong>);
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length ? parts : text;
+}
+
+function MessageBody({ content }) {
+  const normalized = repairMojibake(content || '');
+  const lines = normalized.split('\n');
+  const nodes = [];
+  let listItems = [];
+
+  function flushList(keyBase) {
+    if (!listItems.length) return;
+    nodes.push(
+      <ol key={`list-${keyBase}`} className="message-list">
+        {listItems.map(item => (
+          <li key={item.key}>{renderInlineFormatting(item.text)}</li>
+        ))}
+      </ol>
+    );
+    listItems = [];
+  }
+
+  lines.forEach((line, index) => {
+    const orderedMatch = line.match(/^\s*(\d+)\.\s+(.*)$/);
+    if (orderedMatch) {
+      listItems.push({ key: `item-${index}`, text: orderedMatch[2] });
+      return;
+    }
+
+    flushList(index);
+
+    if (!line.trim()) {
+      nodes.push(<div key={`spacer-${index}`} className="message-spacer" />);
+      return;
+    }
+
+    nodes.push(
+      <p key={`line-${index}`} className="message-paragraph">
+        {renderInlineFormatting(line)}
+      </p>
+    );
+  });
+
+  flushList('final');
+  return <>{nodes}</>;
+}
 
 function sortThreads(list) {
   return [...list].sort((left, right) => {
@@ -46,6 +138,7 @@ function ChatWindow({ user, onLogout }) {
   const [renamingThreadId, setRenamingThreadId] = useState(null);
   const [renameValue, setRenameValue]         = useState('');
   const [sendPhase, setSendPhase]             = useState('');
+  const [streamingReplyStarted, setStreamingReplyStarted] = useState(false);
   const [error, setError]                     = useState('');
   const [session, setSession]                 = useState({
     question_count: 0,
@@ -268,30 +361,57 @@ function ChatWindow({ user, onLogout }) {
       setError('You have reached the question limit for this chat. Reset the session to continue.');
       return;
     }
-    setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
+    const tempAssistantId = `streaming-assistant-${Date.now()}`;
+    setMessages(prev => [
+      ...prev,
+      { role: 'user', content: trimmed },
+      { id: tempAssistantId, role: 'assistant', content: '', isStreamingPlaceholder: true }
+    ]);
     setInput('');
     setSending(true);
     setSendPhase('thinking');
+    setStreamingReplyStarted(false);
     setError('');
     try {
-      const response = await sendMessage(activeThreadId, trimmed);
-      const returnedMessages = response.messages || [];
-      const assistantMessage = returnedMessages.find(entry => entry.role === 'assistant');
-      const replyText = assistantMessage?.content || '...';
-      setMessages(prev => [...prev, assistantMessage || { role: 'assistant', content: replyText }]);
-      setSession(prev => ({ ...prev, ...(response.session || {}) }));
-      upsertThread(response.thread);
+      const response = await sendMessageStream(activeThreadId, trimmed, {
+        onDelta(chunk) {
+          setStreamingReplyStarted(true);
+          setSendPhase('replying');
+          setMessages(prev => prev.map(message => (
+            message.id === tempAssistantId
+              ? { ...message, content: `${message.content || ''}${chunk}` }
+              : message
+          )));
+        }
+      });
+
+      const assistantMessage = response.message
+        || (response.messages || []).find(entry => entry.role === 'assistant')
+        || { role: 'assistant', content: '...' };
+      setMessages(prev => prev.map(message => (
+        message.id === tempAssistantId ? { ...message, ...assistantMessage } : message
+      )));
+
+      if (response.session) {
+        setSession(prev => ({ ...prev, ...response.session }));
+      }
+      if (response.thread) {
+        upsertThread(response.thread);
+      }
     } catch (err) {
       const isAuthError = err?.status === 401;
       const fallback = isAuthError
         ? 'Your session has expired. Please log in again.'
         : err?.payload?.error || err?.message || 'Something went wrong. Please try again.';
-      setMessages(prev => [...prev, { role: 'assistant', content: fallback }]);
+      setMessages(prev => prev.map(message => (
+        message.id === tempAssistantId ? { ...message, content: fallback } : message
+      )));
       setError(fallback);
       if (isAuthError && typeof onLogout === 'function') onLogout();
     } finally {
       setSending(false);
       setSendPhase('');
+      setStreamingReplyStarted(false);
     }
   }
 
@@ -518,6 +638,13 @@ function ChatWindow({ user, onLogout }) {
             <div className="chatgpt-messages">
               {messages.map((m, idx) => {
                 const isAi = m.role === 'assistant';
+                const hideEmptyStreamingPlaceholder =
+                  m.isStreamingPlaceholder && typeof m.content === 'string' && m.content.trim().length === 0;
+
+                if (hideEmptyStreamingPlaceholder) {
+                  return null;
+                }
+
                 return (
                   <div
                     key={m.id || idx}
@@ -528,12 +655,12 @@ function ChatWindow({ user, onLogout }) {
                     </div>
                     <div className="message-content">
                       <div className="message-name">{isAi ? 'Mama Akinyi' : displayName}</div>
-                      <div className="message-text">{m.content}</div>
+                      <div className="message-text"><MessageBody content={m.content} /></div>
                     </div>
                   </div>
                 );
               })}
-              {sending && (
+              {sending && !streamingReplyStarted && (
                 <div className={`message-row ai ${darkMode ? 'dark' : 'light'}`}>
                   <div className="message-avatar">
                     <img src={logo} alt="Mama Akinyi" className="avatar-logo" />
@@ -541,8 +668,12 @@ function ChatWindow({ user, onLogout }) {
                   <div className="message-content">
                     <div className="message-name">Mama Akinyi</div>
                     <div className="message-text thinking">
-                      <span className="thinking-label">{sendPhase === 'thinking' ? 'Thinking...' : 'Replying...'}</span>
-                      <span /><span /><span />
+                      <span className="thinking-label">{sendPhase === 'thinking' ? 'Thinking' : 'Replying'}</span>
+                      <span className="thinking-dots" aria-hidden="true">
+                        <span className="thinking-dot" />
+                        <span className="thinking-dot" />
+                        <span className="thinking-dot" />
+                      </span>
                     </div>
                   </div>
                 </div>

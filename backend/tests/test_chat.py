@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from backend.models import ChatThread, Message
 from backend.services.app_manifest import AppManifestEntry
 from backend.services.app_search import AppMatch
@@ -478,3 +480,120 @@ def test_chat_updates_summary_after_summary_window(client, app, registered_user_
     assert response.status_code == 201
     assert conversation.current_summary == "Summary of 2 turns"
     assert conversation.turns_since_last_summary == 0
+
+
+def test_chat_message_stream_emits_deltas_and_persists_exchange(
+    client, app, registered_user_payload, monkeypatch
+):
+    _register_and_login(client, registered_user_payload)
+
+    fake_memory = FakeChatMemory(retrieval=None)
+    app.extensions["chat_memory"] = fake_memory
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "backend.routes.chat.stream_assistant_reply",
+        lambda *_args, **_kwargs: iter(["Hello", " there"]),
+    )
+
+    response = client.post("/chat/message/stream", json={"text": "Hi"}, buffered=True)
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/x-ndjson"
+
+    events = [
+        json.loads(line)
+        for line in response.get_data(as_text=True).splitlines()
+        if line.strip()
+    ]
+
+    assert events[0] == {"type": "delta", "content": "Hello"}
+    assert events[1] == {"type": "delta", "content": " there"}
+    assert events[2]["type"] == "done"
+    assert events[2]["message"]["content"] == "Hello there"
+    assert events[2]["session"]["question_count"] == 1
+    assert fake_memory.archived == [(1, 1, "Hi", "Hello there")]
+    assert fake_memory.appended == [(1, 1, "Hi", "Hello there")]
+
+
+def test_chat_message_stream_returns_json_when_question_limit_reached(
+    client, app, registered_user_payload, monkeypatch
+):
+    _register_and_login(client, registered_user_payload)
+
+    app.extensions["chat_memory"] = FakeChatMemory(retrieval=None)
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "backend.routes.chat.generate_assistant_reply",
+        lambda *_args, **_kwargs: "Reply",
+    )
+
+    for index in range(10):
+        response = client.post("/chat/message", json={"text": f"Question {index}"})
+        assert response.status_code == 201
+
+    blocked = client.post("/chat/message/stream", json={"text": "Question 11"})
+    blocked_data = blocked.get_json()
+
+    assert blocked.status_code == 200
+    assert "10-question limit" in blocked_data["messages"][0]["content"]
+    assert blocked_data["session"]["limit_reached"] is True
+
+
+def test_chat_message_stream_returns_503_before_first_chunk_on_llm_failure(
+    client, app, registered_user_payload, monkeypatch
+):
+    from backend.services.llama_cpp_client import LlamaCppError
+
+    _register_and_login(client, registered_user_payload)
+
+    fake_memory = FakeChatMemory(retrieval=None)
+    app.extensions["chat_memory"] = fake_memory
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+
+    def _raise_stream_error(*_args, **_kwargs):
+        raise LlamaCppError("boom", reason="down")
+        yield
+
+    monkeypatch.setattr("backend.routes.chat.stream_assistant_reply", _raise_stream_error)
+
+    response = client.post("/chat/message/stream", json={"text": "Question"})
+    data = response.get_json()
+
+    assert response.status_code == 503
+    assert "local AI model" in data["error"]
+    assert fake_memory.archived == []
+    assert fake_memory.appended == []
+    assert Message.query.count() == 0
+
+
+def test_chat_message_stream_emits_error_event_and_skips_persistence_on_midstream_failure(
+    client, app, registered_user_payload, monkeypatch
+):
+    from backend.services.llama_cpp_client import LlamaCppError
+
+    _register_and_login(client, registered_user_payload)
+
+    fake_memory = FakeChatMemory(retrieval=None)
+    app.extensions["chat_memory"] = fake_memory
+    monkeypatch.setattr("backend.routes.chat.search_apps", lambda *_args, **_kwargs: None)
+
+    def _failing_stream(*_args, **_kwargs):
+        yield "Hello"
+        raise LlamaCppError("boom", reason="down")
+
+    monkeypatch.setattr("backend.routes.chat.stream_assistant_reply", _failing_stream)
+
+    response = client.post("/chat/message/stream", json={"text": "Question"}, buffered=True)
+    events = [
+        json.loads(line)
+        for line in response.get_data(as_text=True).splitlines()
+        if line.strip()
+    ]
+
+    assert response.status_code == 200
+    assert events[0] == {"type": "delta", "content": "Hello"}
+    assert events[1]["type"] == "error"
+    assert "local AI model" in events[1]["error"]
+    assert fake_memory.archived == []
+    assert fake_memory.appended == []
+    assert Message.query.count() == 0

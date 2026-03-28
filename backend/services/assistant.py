@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
+from typing import Iterator
 
 from flask import current_app, has_app_context
 
 from .chat_memory import RetrievedMemory
 from .conversation_state import CompletedTurn
-from .llama_cpp_client import LlamaCppError, generate_response
+from .llama_cpp_client import LlamaCppError, generate_response, generate_response_stream
 from .prompts import SYSTEM_PROMPT, MatchedAppContext, build_user_prompt
 
 logger = logging.getLogger(__name__)
@@ -27,10 +28,100 @@ def generate_assistant_reply(
     """Generate an assistant reply using retrieval-based chat context."""
     cleaned = (user_text or "").strip()
     name = (user_name or "").strip() or "there"
-
     if not cleaned:
         return f"Hello {name}! What would you like to chat about today?"
 
+    user_prompt = _prepare_user_prompt(
+        cleaned,
+        user_name=user_name,
+        is_first_turn=is_first_turn,
+        conversation_summary=conversation_summary,
+        matched_app=matched_app,
+        retrieved_background=retrieved_background,
+        recent_turns=recent_turns,
+        user_id=user_id,
+        prompt_log=prompt_log,
+    )
+
+    try:
+        reply = generate_response(
+            user_prompt,
+            system=SYSTEM_PROMPT,
+            timeout=120,
+        )
+        return reply
+    except LlamaCppError as e:
+        logger.exception(
+            "llama.cpp failed: %s (reason=%s status=%s)",
+            e,
+            getattr(e, "reason", None),
+            getattr(e, "status", None),
+        )
+        if not fallback_on_error:
+            raise
+        return "I’m having trouble reaching the local AI model right now. Please try again in a moment."
+
+
+def stream_assistant_reply(
+    user_text: str,
+    user_name: str | None = None,
+    is_first_turn: bool = False,
+    conversation_summary: str | None = None,
+    matched_app: MatchedAppContext | None = None,
+    retrieved_background: list[RetrievedMemory] | None = None,
+    recent_turns: list[CompletedTurn] | None = None,
+    user_id: int | None = None,
+    prompt_log: dict[str, int | bool] | None = None,
+) -> Iterator[str]:
+    """Generate an assistant reply using retrieval-based chat context and yield deltas."""
+    cleaned = (user_text or "").strip()
+    name = (user_name or "").strip() or "there"
+    if not cleaned:
+        yield f"Hello {name}! What would you like to chat about today?"
+        return
+
+    user_prompt = _prepare_user_prompt(
+        cleaned,
+        user_name=user_name,
+        is_first_turn=is_first_turn,
+        conversation_summary=conversation_summary,
+        matched_app=matched_app,
+        retrieved_background=retrieved_background,
+        recent_turns=recent_turns,
+        user_id=user_id,
+        prompt_log=prompt_log,
+    )
+
+    try:
+        yield from generate_response_stream(
+            user_prompt,
+            system=SYSTEM_PROMPT,
+            timeout=120,
+        )
+    except LlamaCppError as e:
+        logger.exception(
+            "llama.cpp streaming failed: %s (reason=%s status=%s)",
+            e,
+            getattr(e, "reason", None),
+            getattr(e, "status", None),
+        )
+        raise
+
+
+def _prepare_user_prompt(
+    user_text: str,
+    *,
+    user_name: str | None = None,
+    is_first_turn: bool = False,
+    conversation_summary: str | None = None,
+    matched_app: MatchedAppContext | None = None,
+    retrieved_background: list[RetrievedMemory] | None = None,
+    recent_turns: list[CompletedTurn] | None = None,
+    user_id: int | None = None,
+    prompt_log: dict[str, int | bool] | None = None,
+) -> str:
+    """Build and log the prompt used for either sync or streaming generation."""
+    cleaned = (user_text or "").strip()
     background = retrieved_background or []
     recent = recent_turns or []
     user_prompt = build_user_prompt(
@@ -91,24 +182,7 @@ def generate_assistant_reply(
     if _should_log_full_prompts():
         logger.info("Full system prompt:\n%s", SYSTEM_PROMPT)
         logger.info("Full user prompt:\n%s", user_prompt)
-
-    try:
-        reply = generate_response(
-            user_prompt,
-            system=SYSTEM_PROMPT,
-            timeout=120,
-        )
-        return reply
-    except LlamaCppError as e:
-        logger.exception(
-            "llama.cpp failed: %s (reason=%s status=%s)",
-            e,
-            getattr(e, "reason", None),
-            getattr(e, "status", None),
-        )
-        if not fallback_on_error:
-            raise
-        return "I’m having trouble reaching the local AI model right now. Please try again in a moment."
+    return user_prompt
 
 
 

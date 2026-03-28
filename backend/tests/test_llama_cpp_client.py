@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 import requests
 
-from backend.services.llama_cpp_client import LlamaCppError, check_llama_cpp_health, generate_response
+from backend.services.llama_cpp_client import (
+    LlamaCppError,
+    check_llama_cpp_health,
+    generate_response,
+    generate_response_stream,
+)
 
 
 class _FakeResponse:
@@ -17,6 +22,18 @@ class _FakeResponse:
         if isinstance(self._payload, Exception):
             raise self._payload
         return self._payload
+
+    def iter_lines(self, decode_unicode=True):
+        if isinstance(self._payload, list):
+            yield from self._payload
+            return
+        return iter(())
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
 
 def test_generate_response_parses_chat_completion(monkeypatch):
@@ -95,6 +112,47 @@ def test_generate_response_rejects_empty_content(monkeypatch):
 
     with pytest.raises(LlamaCppError) as exc_info:
         generate_response("Hello")
+
+    assert str(exc_info.value) == "llama.cpp returned an empty response"
+    assert exc_info.value.reason == "empty_response"
+
+
+def test_generate_response_stream_yields_deltas(monkeypatch):
+    captured = {}
+
+    def _fake_post(url, json, timeout, stream):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        captured["stream"] = stream
+        return _FakeResponse(
+            [
+                'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+                'data: {"choices":[{"delta":{"content":" there"}}]}',
+                'data: [DONE]',
+            ]
+        )
+
+    monkeypatch.setattr("backend.services.llama_cpp_client.requests.post", _fake_post)
+
+    result = list(generate_response_stream("What should I study?", system="You are helpful."))
+
+    assert result == ["Hello", " there"]
+    assert captured["timeout"] == 60
+    assert captured["stream"] is True
+    assert captured["json"]["stream"] is True
+    assert captured["json"]["messages"][0] == {"role": "system", "content": "You are helpful."}
+    assert captured["json"]["messages"][1] == {"role": "user", "content": "What should I study?"}
+
+
+def test_generate_response_stream_raises_on_empty_response(monkeypatch):
+    def _fake_post(url, json, timeout, stream):
+        return _FakeResponse(['data: [DONE]'])
+
+    monkeypatch.setattr("backend.services.llama_cpp_client.requests.post", _fake_post)
+
+    with pytest.raises(LlamaCppError) as exc_info:
+        list(generate_response_stream("Hello"))
 
     assert str(exc_info.value) == "llama.cpp returned an empty response"
     assert exc_info.value.reason == "empty_response"
