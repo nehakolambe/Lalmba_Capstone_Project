@@ -23,5 +23,7 @@ test('routes incomplete session users to the questionnaire', async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole('heading', { name: /tell us about yourself/i })).toBeInTheDocument();
+  expect(
+    await screen.findByRole('heading', { name: /tell us about yourself \(tuambie kukuhusu\)/i })
+  ).toBeInTheDocument();
 });

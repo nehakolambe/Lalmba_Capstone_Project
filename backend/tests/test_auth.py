@@ -79,8 +79,8 @@ def test_profile_update_and_fetch(client, registered_user_payload):
             "age_group": "teen",
             "education_level": "class_9",
             "preferred_language": "english",
-            "english_fluency": "intermediate",
-            "computer_literacy": "beginner",
+            "english_fluency": "can_do_some",
+            "computer_literacy": "need_help",
         },
     )
     data = response.get_json()
@@ -88,7 +88,8 @@ def test_profile_update_and_fetch(client, registered_user_payload):
     assert response.status_code == 200
     assert data["user"]["profile_complete"] is True
     assert data["user"]["education_level"] == "class_9"
-    assert data["user"]["english_fluency"] == "intermediate"
+    assert data["user"]["english_fluency"] == "can_do_some"
+    assert data["user"]["computer_literacy"] == "need_help"
 
     profile_response = client.get("/auth/profile")
     profile_data = profile_response.get_json()
@@ -105,7 +106,7 @@ def test_profile_update_requires_english_fluency_for_english(client, registered_
             "age_group": "teen",
             "education_level": "class_9",
             "preferred_language": "english",
-            "computer_literacy": "beginner",
+            "computer_literacy": "need_help",
         },
     )
     data = response.get_json()
@@ -124,8 +125,8 @@ def test_profile_update_clears_english_fluency_for_kiswahili(client, registered_
             "age_group": "adult",
             "education_level": "college",
             "preferred_language": "kiswahili",
-            "english_fluency": "advanced",
-            "computer_literacy": "advanced",
+            "english_fluency": "can_do_well",
+            "computer_literacy": "can_do_well",
         },
     )
     data = response.get_json()
@@ -133,3 +134,48 @@ def test_profile_update_clears_english_fluency_for_kiswahili(client, registered_
     assert response.status_code == 200
     assert data["user"]["preferred_language"] == "kiswahili"
     assert data["user"]["english_fluency"] is None
+
+
+def test_profile_update_normalizes_legacy_skill_values(client, registered_user_payload):
+    client.post("/auth/register", json=registered_user_payload)
+
+    response = client.patch(
+        "/auth/profile",
+        json={
+            "age_group": "teen",
+            "education_level": "class_9",
+            "preferred_language": "english",
+            "english_fluency": "beginner",
+            "computer_literacy": "advanced",
+        },
+    )
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["user"]["english_fluency"] == "need_help"
+    assert data["user"]["computer_literacy"] == "can_do_well"
+
+
+def test_profile_fetch_normalizes_legacy_saved_values(client, app, registered_user_payload):
+    client.post("/auth/register", json=registered_user_payload)
+
+    with app.app_context():
+        from backend.models import User
+
+        user = User.query.filter_by(username=registered_user_payload["username"]).one()
+        user.age_group = "adult"
+        user.education_level = "adult"
+        user.preferred_language = "english"
+        user.english_fluency = "intermediate"
+        user.computer_literacy = "beginner"
+        from backend.extensions import db
+
+        db.session.add(user)
+        db.session.commit()
+
+    response = client.get("/auth/profile")
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["profile"]["english_fluency"] == "can_do_some"
+    assert data["profile"]["computer_literacy"] == "need_help"

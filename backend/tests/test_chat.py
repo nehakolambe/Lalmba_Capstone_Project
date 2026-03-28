@@ -460,7 +460,8 @@ def test_chat_message_passes_user_profile_context(client, app, registered_user_p
     assert response.status_code == 201
     assert captured["kwargs"]["user_profile"] is not None
     assert captured["kwargs"]["user_profile"].education_level == "class_8"
-    assert captured["kwargs"]["user_profile"].english_fluency == "beginner"
+    assert captured["kwargs"]["user_profile"].english_fluency == "need_help"
+    assert captured["kwargs"]["user_profile"].computer_literacy == "need_help"
 
 
 def test_chat_enforces_question_limit(client, app, registered_user_payload, monkeypatch):

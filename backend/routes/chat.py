@@ -6,7 +6,7 @@ import json
 from flask import Response, current_app, jsonify, request, stream_with_context
 
 from ..extensions import db
-from ..models import ChatThread, Message, Progress
+from ..models import ChatThread, Message, Progress, normalize_skill_level
 from ..services.assistant import (
     generate_assistant_reply,
     generate_conversation_summary,
@@ -46,8 +46,8 @@ def _build_user_profile_context(user) -> UserProfileContext | None:
         age_group=user.age_group,
         education_level=user.education_level,
         preferred_language=user.preferred_language,
-        english_fluency=user.english_fluency,
-        computer_literacy=user.computer_literacy,
+        english_fluency=normalize_skill_level(user.english_fluency),
+        computer_literacy=normalize_skill_level(user.computer_literacy),
     )
 
 

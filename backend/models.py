@@ -4,6 +4,23 @@ import bcrypt
 
 from .extensions import db
 
+LEGACY_SKILL_LEVEL_MAP = {
+    "beginner": "need_help",
+    "intermediate": "can_do_some",
+    "advanced": "can_do_well",
+}
+
+CANONICAL_SKILL_LEVELS = frozenset(LEGACY_SKILL_LEVEL_MAP.values())
+
+
+def normalize_skill_level(value: str | None) -> str | None:
+    normalized = (value or "").strip().lower()
+    if not normalized:
+        return None
+    if normalized in CANONICAL_SKILL_LEVELS:
+        return normalized
+    return LEGACY_SKILL_LEVEL_MAP.get(normalized, normalized)
+
 
 class User(db.Model):
     """Application user with PIN authentication."""
@@ -71,8 +88,8 @@ class User(db.Model):
             "age_group": self.age_group,
             "education_level": self.education_level,
             "preferred_language": self.preferred_language,
-            "english_fluency": self.english_fluency,
-            "computer_literacy": self.computer_literacy,
+            "english_fluency": normalize_skill_level(self.english_fluency),
+            "computer_literacy": normalize_skill_level(self.computer_literacy),
             "profile_complete": self.profile_complete,
             "created_at": self.created_at.isoformat(),
         }

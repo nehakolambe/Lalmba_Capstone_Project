@@ -187,7 +187,7 @@ Backend core:
 
 App search:
 - `APP_MANIFEST_PATH` (default `backend/data/app_manifest.json`)
-- `APP_EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`)
+- `APP_EMBEDDING_MODEL` (default `paraphrase-multilingual-MiniLM-L12-v2`)
 - `APP_MATCH_THRESHOLD` (default `0.35`)
 - `APP_SEARCH_ENABLED` (default `true`)
 
@@ -203,6 +203,10 @@ Hybrid multi-turn memory:
 - `CHAT_QUESTION_LIMIT` (default `10`)
 - `CHAT_SUMMARY_WINDOW_TURNS` (default `5`)
 - `CHAT_SUMMARY_OVERLAP_TURNS` (default `1`)
+
+Multilingual retrieval note:
+- App search and chat memory should use the same multilingual embedding model for English, Swahili, and mixed-language queries.
+- Chat memory collections are now versioned by embedding model so old vectors do not mix with new ones after a model switch.
 
 Frontend:
 - `REACT_APP_API_BASE` (default `http://localhost:5000` in React dev mode, same-origin when served by Flask)

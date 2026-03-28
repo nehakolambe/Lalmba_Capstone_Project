@@ -5,7 +5,11 @@ from typing import Tuple
 from flask import jsonify, request, session
 
 from ..extensions import db
-from ..models import User
+from ..models import (
+    CANONICAL_SKILL_LEVELS,
+    User,
+    normalize_skill_level,
+)
 from ..utils import error_response, get_current_user, login_required
 from . import auth_bp
 
@@ -28,8 +32,8 @@ EDUCATION_LEVEL_OPTIONS = frozenset(
     }
 )
 LANGUAGE_OPTIONS = frozenset({"english", "kiswahili"})
-FLUENCY_OPTIONS = frozenset({"beginner", "intermediate", "advanced"})
-COMPUTER_LITERACY_OPTIONS = frozenset({"beginner", "intermediate", "advanced"})
+FLUENCY_OPTIONS = CANONICAL_SKILL_LEVELS
+COMPUTER_LITERACY_OPTIONS = CANONICAL_SKILL_LEVELS
 
 
 def _validate_credentials(data) -> Tuple[str, str]:
@@ -63,6 +67,25 @@ def _validate_choice(
     return normalized
 
 
+def _validate_skill_level(
+    value: object,
+    *,
+    field: str,
+    label: str,
+    errors: dict[str, str],
+) -> str | None:
+    normalized = _normalize_choice(value)
+    if not normalized:
+        errors[field] = f"{label} is required."
+        return None
+
+    canonical = normalize_skill_level(normalized)
+    if canonical not in FLUENCY_OPTIONS:
+        errors[field] = f"Invalid {label.lower()}."
+        return None
+    return canonical
+
+
 def _validate_profile_payload(payload: dict) -> tuple[dict[str, str | None] | None, dict[str, str]]:
     errors: dict[str, str] = {}
     age_group = _validate_choice(
@@ -86,27 +109,25 @@ def _validate_profile_payload(payload: dict) -> tuple[dict[str, str | None] | No
         valid_options=LANGUAGE_OPTIONS,
         errors=errors,
     )
-    computer_literacy = _validate_choice(
+    computer_literacy = _validate_skill_level(
         payload.get("computer_literacy") or payload.get("computerLiteracy"),
         field="computer_literacy",
         label="Computer literacy",
-        valid_options=COMPUTER_LITERACY_OPTIONS,
         errors=errors,
     )
 
     english_fluency: str | None = None
     raw_english_fluency = payload.get("english_fluency") or payload.get("englishFluency")
     if preferred_language == "english":
-        english_fluency = _validate_choice(
+        english_fluency = _validate_skill_level(
             raw_english_fluency,
             field="english_fluency",
             label="English fluency",
-            valid_options=FLUENCY_OPTIONS,
             errors=errors,
         )
     else:
         normalized = _normalize_choice(raw_english_fluency)
-        if normalized and normalized not in FLUENCY_OPTIONS:
+        if normalized and normalize_skill_level(normalized) not in FLUENCY_OPTIONS:
             errors["english_fluency"] = "Invalid english fluency."
 
     if errors:

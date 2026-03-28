@@ -36,8 +36,8 @@ def test_build_user_prompt_with_user_profile():
             age_group="teen",
             education_level="class_7",
             preferred_language="english",
-            english_fluency="beginner",
-            computer_literacy="intermediate",
+            english_fluency="need_help",
+            computer_literacy="can_do_some",
         ),
     )
 
@@ -45,8 +45,8 @@ def test_build_user_prompt_with_user_profile():
     assert "- age_group: teen" in prompt
     assert "- education_level: class_7" in prompt
     assert "- preferred_language: english" in prompt
-    assert "- english_fluency: beginner" in prompt
-    assert "- computer_literacy: intermediate" in prompt
+    assert "- english_fluency: need_help" in prompt
+    assert "- computer_literacy: can_do_some" in prompt
 
 
 def test_build_user_prompt_omits_english_fluency_for_kiswahili_profile():
@@ -58,7 +58,7 @@ def test_build_user_prompt_omits_english_fluency_for_kiswahili_profile():
             education_level="adult",
             preferred_language="kiswahili",
             english_fluency=None,
-            computer_literacy="beginner",
+            computer_literacy="need_help",
         ),
     )
 

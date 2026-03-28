@@ -13,7 +13,7 @@ def test_load_embedding_model_uses_cpu(monkeypatch):
 
     monkeypatch.setattr(embeddings, "SentenceTransformer", FakeSentenceTransformer)
 
-    embeddings.load_embedding_model("all-MiniLM-L6-v2")
+    embeddings.load_embedding_model("paraphrase-multilingual-MiniLM-L12-v2")
 
-    assert captured["model_name"] == "all-MiniLM-L6-v2"
+    assert captured["model_name"] == "paraphrase-multilingual-MiniLM-L12-v2"
     assert captured["device"] == "cpu"
