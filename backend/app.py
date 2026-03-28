@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from .config import Config, _as_bool
@@ -30,7 +31,12 @@ def log_startup(app: Flask, host: str, port: int) -> None:
 
 def create_app(config_class: type[Config] = Config) -> Flask:
     """Application factory for the chatbot backend."""
-    app = Flask(__name__)
+    frontend_build_dir = Path(getattr(config_class, "FRONTEND_BUILD_DIR", ""))
+    app = Flask(
+        __name__,
+        static_folder=str(frontend_build_dir),
+        static_url_path="",
+    )
     app.config.from_object(config_class)
 
     db.init_app(app)
@@ -84,6 +90,32 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     def health():
         """Basic readiness check for local development."""
         return jsonify({"ok": True})
+
+    @app.get("/")
+    @app.get("/<path:path>")
+    def serve_frontend(path: str = "index.html"):
+        """Serve the built React frontend from Flask for same-origin local deployment."""
+        build_dir = Path(app.config["FRONTEND_BUILD_DIR"])
+        index_file = build_dir / "index.html"
+        if not build_dir.exists() or not index_file.is_file():
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": "Frontend build not found",
+                        "details": {
+                            "build_dir": str(build_dir),
+                            "hint": "Run scripts/build_frontend.sh on the Dell before starting the backend.",
+                        },
+                    }
+                ),
+                503,
+            )
+
+        requested_path = build_dir / path
+        if path != "index.html" and requested_path.is_file():
+            return send_from_directory(build_dir, path)
+        return send_from_directory(build_dir, index_file.name)
 
     return app
 

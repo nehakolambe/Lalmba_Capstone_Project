@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.models import Conversation, Message
+from backend.models import ChatThread, Message
 from backend.services.app_manifest import AppManifestEntry
 from backend.services.app_search import AppMatch
 
@@ -136,7 +136,7 @@ def test_chat_message_passes_app_context_without_blocking(client, app, registere
     assert "simple shapes" in data["messages"][1]["content"]
     assert captured["kwargs"]["matched_app"] is not None
     assert captured["kwargs"]["matched_app"].app_id == "tux_paint"
-    conversation = Conversation.query.filter_by(user_id=1).first()
+    conversation = ChatThread.query.filter_by(user_id=1).first()
     assert conversation.last_suggested_app_id == "tux_paint"
     assert conversation.last_app_topic_hint == "drawing-art"
 
@@ -473,7 +473,7 @@ def test_chat_updates_summary_after_summary_window(client, app, registered_user_
     client.post("/chat/message", json={"text": "First lesson"})
     response = client.post("/chat/message", json={"text": "Second lesson"})
 
-    conversation = Conversation.query.filter_by(user_id=1).first()
+    conversation = ChatThread.query.filter_by(user_id=1).first()
 
     assert response.status_code == 201
     assert conversation.current_summary == "Summary of 2 turns"

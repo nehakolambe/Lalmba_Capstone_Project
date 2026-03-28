@@ -71,6 +71,12 @@ def reset_conversation_state(user_id: int, thread_id: int | None = None) -> None
     thread = get_or_create_conversation_state(user_id, thread_id)
     thread.current_summary = None
     thread.turns_since_last_summary = 0
+    thread.question_count = 0
+    thread.pending_app_choice = False
+    thread.pending_app_id = None
+    thread.pending_app_question = None
+    thread.last_suggested_app_id = None
+    thread.last_app_topic_hint = None
     Conversation.query.filter_by(user_id=user_id).delete()
 
 
